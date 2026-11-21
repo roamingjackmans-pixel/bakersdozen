@@ -1,0 +1,27 @@
+{
+  "name": "bakersdozen",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Baker's Dozen: a co-opetition party game for 1-4 bakers. Shared tray, rival bakers, the 13th loaf. Accounts shared with Shoallhell.",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:client": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "balance": "node scripts/balance.mjs"
+  },
+  "dependencies": {
+    "socket.io-client": "^4.8.4"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "socket.io": "^4.8.4",
+    "express": "^5.3.0",
+    "typescript": "6.0.3",
+    "vite": "8.3.5",
+    "vitest": "5.1.0"
+  }
+}
