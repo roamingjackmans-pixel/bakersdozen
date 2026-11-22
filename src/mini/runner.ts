@@ -128,6 +128,14 @@ function darkness(): HTMLCanvasElement {
   return darkSprite;
 }
 
+/** a point on screen (client pixels) → game coordinates, given where the canvas is on screen */
+export function toStage(clientX: number, clientY: number, r: { left: number; top: number; width: number; height: number }, mirror = false): [number, number] {
+  let x = ((clientX - r.left) * W) / r.width;
+  const y = ((clientY - r.top) * H) / r.height;
+  if (mirror) x = W - x;
+  return [x, y];
+}
+
 export function runMini(host: HTMLElement, o: RunOpts): { stop(): void; game(): MiniGame } {
   const canvas = document.createElement('canvas');
   canvas.className = 'mini-canvas';
@@ -165,12 +173,17 @@ export function runMini(host: HTMLElement, o: RunOpts): { stop(): void; game(): 
   // device pixels per stage pixel: capped at 1.5 (sharp enough on a retina screen, half the fill of 2×), and
   // stepped down by `slow` if frames keep running long on this device
   let slow = 1;
+  // where the canvas sits on screen (the stage is scaled and centred in the window), for turning taps into game
+  // coordinates: measured at the start, on every resize and on every press (moves reuse the press's measure)
   let rect = { left: 0, top: 0, width: W, height: H };
+  const measure = (): void => {
+    const b = canvas.getBoundingClientRect();
+    if (b.width > 0 && b.height > 0) rect = { left: b.left, top: b.top, width: b.width, height: b.height };
+  };
   const resize = (): void => {
+    measure();
     const dpr = window.devicePixelRatio || 1;
     const nk = Math.min(1.5, Math.max(0.5, stageScale() * dpr)) * slow;
-    const r = rect;
-    rect = { left: r.left, top: r.top, width: r.width || W, height: r.height || H };
     if (Math.abs(nk - k) < 0.01 && canvas.width) return;
     k = nk;
     canvas.width = Math.round(W * k);
@@ -181,13 +194,7 @@ export function runMini(host: HTMLElement, o: RunOpts): { stop(): void; game(): 
   const offScale = onScale(resize);
 
   const cur = (): MiniGame => games[gi]!;
-  const toLocal = (e: PointerEvent): [number, number] => {
-    const r = rect;
-    let x = ((e.clientX - r.left) * W) / r.width;
-    const y = ((e.clientY - r.top) * H) / r.height;
-    if (mirror) x = W - x;
-    return [x, y];
-  };
+  const toLocal = (e: PointerEvent): [number, number] => toStage(e.clientX, e.clientY, rect, mirror);
   const started = (): boolean => performance.now() >= o.startAt;
 
   const onDown = (e: PointerEvent): void => {
@@ -198,6 +205,7 @@ export function runMini(host: HTMLElement, o: RunOpts): { stop(): void; game(): 
     } catch {
       /* a pointer the browser does not track (synthetic): fine without capture */
     }
+    measure();
     const [x, y] = toLocal(e);
     px = x;
     py = y;
