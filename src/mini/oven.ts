@@ -2,13 +2,15 @@
 // it's golden to pull it (anyone's: rescuing a rival earns a favor), or let it burn. Bump (once) speeds up a rival's
 // tray. Dawn adds a prep board (knead your tray before it can go in) and golden trays worth more.
 // The host runs the oven; this draws its snapshots on the host clock, so every screen shows the same trays.
+// Cues: the glove taps a free slot (LOAD) until you've loaded a couple, a tray that's ready says PULL (a rival's
+// smoking one says SAVE), and at Dawn the glove taps the prep board.
 import { audio } from '../audio/audio';
 import { BAKER } from '../game/data';
 import { PARRY_MS, bakeLevel, nextTray, zoneAt, type OvenState, type Tray } from '../game/oven';
 import type { GameResult, Seat } from '../game/types';
 import { portrait } from '../render/portraits';
 import { sprite } from '../render/art';
-import { Floaters, INK, Particles, W, blit, circle, ellipse, fillInk, rr, text, type Live, type MiniEnv, type MiniGame } from './common';
+import { Floaters, INK, Particles, W, blit, circle, cue, ellipse, fillInk, loop, pill, rr, text, type Live, type MiniEnv, type MiniGame } from './common';
 
 export interface OvenLink {
   state(): OvenState | null;
@@ -23,17 +25,51 @@ export interface OvenLink {
   coop: boolean;
 }
 
-const OY = 300;
-const SLOT_W = 132;
-const SLOT_H = 150;
+export const OY = 300;
+export const SLOT_W = 132;
+export const SLOT_H = 150;
+export const PREP = { x: 120, y: 600, w: 300, h: 170 };
 
-function slotX(i: number, n: number): number {
+export function slotX(i: number, n: number): number {
   const total = n * SLOT_W + (n - 1) * 18;
   return W / 2 - 110 - total / 2 + i * (SLOT_W + 18);
 }
 
+/** the brick oven front and the counter below it */
+export function ovenWall(g: CanvasRenderingContext2D): void {
+  g.fillStyle = '#2A1A12';
+  g.fillRect(0, 0, W, 810);
+  const bw = 64;
+  for (let y = 120; y < 560; y += 30) {
+    for (let x = ((y / 30) % 2) * -32; x < W; x += bw) {
+      g.fillStyle = (x + y) % 3 ? '#6E3524' : '#78402B';
+      g.fillRect(x + 1, y + 1, bw - 3, 27);
+    }
+  }
+  g.fillStyle = 'rgba(0,0,0,0.25)';
+  g.fillRect(0, 120, W, 440);
+  rr(g, -20, 560, W + 40, 70, 12);
+  fillInk(g, '#8A5A35', 4);
+  g.fillStyle = '#3A2419';
+  g.fillRect(0, 610, W, 200);
+}
+
+/** an oven mouth, its fire glowing by `glow` (0..1) */
+export function arch(g: CanvasRenderingContext2D, x: number, glow: number): void {
+  g.beginPath();
+  g.moveTo(x, OY + SLOT_H);
+  g.lineTo(x, OY + 40);
+  g.quadraticCurveTo(x, OY, x + SLOT_W / 2, OY);
+  g.quadraticCurveTo(x + SLOT_W, OY, x + SLOT_W, OY + 40);
+  g.lineTo(x + SLOT_W, OY + SLOT_H);
+  g.closePath();
+  fillInk(g, `rgba(${Math.round(180 + glow * 60)},${Math.round(70 + glow * 40)},20,1)`, 5);
+  g.fillStyle = 'rgba(255,200,90,0.35)';
+  g.fillRect(x + 10, OY + SLOT_H - 26, SLOT_W - 20, 18);
+}
+
 /** raw dough → golden → dark → burnt */
-function trayColor(lv: number, z: string): string {
+export function trayColor(lv: number, z: string): string {
   if (z === 'burnt') return '#2A1A12';
   if (lv < 0.55) return '#F3E3C3';
   if (lv < 0.85) return '#EFCB86';
@@ -51,11 +87,16 @@ export function oven(env: MiniEnv, link: OvenLink): MiniGame {
   let lastE = '';
   let combo = 0;
   const pending = new Set<number>();
+  // the glove shows loading until you've done it a couple of times (or when you've a tray waiting and stall)
+  let loads = 0;
+  let pulls = 0;
+  let lastAct = 0;
+  let clock = 0;
   let hover = -1;
   let px = 0;
   let py = 0;
   const dawn = env.game === 'dawn';
-  const prepBox = { x: 120, y: 600, w: 300, h: 170 };
+  const prepBox = PREP;
   const bumpBtn = { x: 1010, y: 640, w: 180, h: 80 };
 
   const slotOf = (x: number, y: number, n: number): number => {
@@ -74,6 +115,7 @@ export function oven(env: MiniEnv, link: OvenLink): MiniGame {
       const sx = t && t.slot >= 0 ? slotX(t.slot, ov.slots) + SLOT_W / 2 : W / 2;
       if (e.k === 'pull' && e.seat === link.me) {
         pending.delete(e.tray);
+        pulls++;
         if (e.g === 'perfect') {
           const parry = t && t.parry;
           fl.add(parry ? 'Parry' : 'Perfect', sx, OY - 30, '#FFD166', 38);
@@ -104,7 +146,10 @@ export function oven(env: MiniEnv, link: OvenLink): MiniGame {
           combo = 0;
           fl.add('Burnt', sx, OY - 30, '#E06B5F', 34);
         }
-      } else if (e.k === 'load') audio.sfx('load');
+      } else if (e.k === 'load') {
+        audio.sfx('load');
+        if (e.seat === link.me) loads++;
+      }
       else if (e.k === 'bump') {
         audio.sfx('bump');
         if (t?.owner === link.me) fl.add('Bumped', sx, OY - 30, '#C3B0F0', 28);
@@ -132,7 +177,8 @@ export function oven(env: MiniEnv, link: OvenLink): MiniGame {
       g.fillStyle = '#3A2419';
       g.fillRect(0, 610, W, 200);
     },
-    update(_t, dt) {
+    update(t, dt) {
+      clock = t;
       fx.update(dt);
       fl.update(dt);
       const ov = link.state();
@@ -179,6 +225,58 @@ export function oven(env: MiniEnv, link: OvenLink): MiniGame {
         if (tr.st !== 'baking' || tr.slot < 0 || pending.has(tr.id)) continue;
         drawTray(g, tr, slotX(tr.slot, ov.slots), now);
       }
+      // what to do now: PULL over your ready trays, SAVE over a rival's smoking one
+      const myBakery = link.bakeryOf(link.me);
+      let readyTray: Tray | null = null;
+      for (const tr of ov.trays) {
+        if (tr.st !== 'baking' || tr.slot < 0 || pending.has(tr.id)) continue;
+        const z = zoneAt(tr, now);
+        const x = slotX(tr.slot, ov.slots) + SLOT_W / 2;
+        const pulse = 1 + 0.06 * Math.sin(t * 9);
+        if (tr.owner === link.me && (z === 'golden' || z === 'perfect')) {
+          readyTray ??= tr;
+          g.save();
+          g.translate(x, OY - 40);
+          g.scale(pulse, pulse);
+          pill(g, 'PULL', 0, 0, 26);
+          g.restore();
+        } else if (z === 'dark') {
+          pill(g, tr.owner === link.me ? 'PULL!' : 'SAVE', x, OY - 40, 24, tr.owner === link.me ? '#E06B5F' : '#93D3D2');
+        }
+      }
+      // free slots you can load (not one another bakery bought)
+      const busy = new Set(ov.trays.filter((q) => q.st === 'baking' && q.slot >= 0).map((q) => q.slot));
+      const free: number[] = [];
+      for (let i = 0; i < ov.slots; i++) {
+        const rb = ov.reserved?.[i] ?? -1;
+        if (!busy.has(i) && (rb < 0 || rb === myBakery)) free.push(i);
+      }
+      const waiting = nextTray(ov, link.me);
+      if (waiting) {
+        // a faint plus in every free arch
+        g.globalAlpha = 0.55 + 0.25 * Math.sin(t * 5);
+        for (const i of free) {
+          const cx = slotX(i, ov.slots) + SLOT_W / 2;
+          g.strokeStyle = '#FFF4E0';
+          g.lineWidth = 8;
+          g.lineCap = 'round';
+          g.beginPath();
+          g.moveTo(cx - 18, OY + 80);
+          g.lineTo(cx + 18, OY + 80);
+          g.moveTo(cx, OY + 62);
+          g.lineTo(cx, OY + 98);
+          g.stroke();
+        }
+        g.globalAlpha = 1;
+      }
+      const stalled = clock - lastAct > 3;
+      if (readyTray && (pulls < 2 || stalled)) {
+        cue(g, slotX(readyTray.slot, ov.slots) + SLOT_W / 2, OY + 92, 'tap', loop(t, 0.9));
+      } else if (waiting && free.length && (loads < 2 || stalled)) {
+        cue(g, slotX(free[0]!, ov.slots) + SLOT_W / 2, OY + 80, 'tap', loop(t, 1), { label: 'LOAD' });
+      } else if (dawn && !waiting && nextTray(ov, link.me, 'prep') && (loads < 2 || stalled)) {
+        cue(g, prepBox.x + 150, prepBox.y + 92, 'tap', loop(t, 0.6), { above: true, label: 'TAP' });
+      }
       // the shared tray counter(s)
       const bakeries = [...new Set(link.seats.map((_, i) => link.bakeryOf(i)))].filter((b) => b >= 0);
       bakeries.forEach((b, i) => {
@@ -208,7 +306,7 @@ export function oven(env: MiniEnv, link: OvenLink): MiniGame {
         } else text(g, '—', prepBox.x + 150, prepBox.y + 90, { size: 30, color: '#2A1A12' });
       }
       const qx = dawn ? 460 : 160;
-      text(g, nextQ ? 'Tap a slot' : mineQ.length ? 'Knead' : 'All in', qx + 160, 640, { size: 22, font: 'ui', color: '#F3E6CF', align: 'center' });
+      text(g, nextQ ? (free.length ? 'Tap a slot' : 'Oven full · wait') : mineQ.length ? 'Knead' : 'All in', qx + 160, 640, { size: 22, font: 'ui', color: '#F3E6CF', align: 'center' });
       mineQ.slice(0, 6).forEach((tr, i) => {
         const x = qx + i * 64;
         rr(g, x, 668, 120, 70, 12);
@@ -231,6 +329,7 @@ export function oven(env: MiniEnv, link: OvenLink): MiniGame {
     down(x, y) {
       const ov = link.state();
       if (!ov) return;
+      lastAct = clock;
       const now = link.hostNow();
       if (!link.coop && x >= bumpBtn.x && x <= bumpBtn.x + bumpBtn.w && y >= bumpBtn.y && y <= bumpBtn.y + bumpBtn.h) {
         if (!(ov.bumps[link.me] ?? 0)) bumpMode = !bumpMode;

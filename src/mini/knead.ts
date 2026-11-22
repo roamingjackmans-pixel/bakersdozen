@@ -1,9 +1,11 @@
-// Knead: tap on the beat. Fold rings close in on the dough; tap as a ring meets it. The beat is scheduled on the
-// audio clock and taps are judged against what you hear (output latency and your calibration taken off).
-// Metronome (buff) keeps the rings visible all the way in and lights the beat; without it they fade near the end.
+// Knead: tap as each fold ring closes onto the dough. The beat is scheduled on the audio clock and taps are judged
+// against what you hear (output latency and your calibration taken off). Everything is also on screen, for players
+// with the sound off: the rings stay visible all the way in, the gold target ring flashes at the moment to tap, and
+// the board's edge pulses on every drum beat. The glove taps along with the first notes (and again if you're lost).
+// Metronome (buff) widens the timing windows.
 import { audio } from '../audio/audio';
 import type { GameResult } from '../game/types';
-import { DISPLAY, Floaters, GRADE_COLORS, INK, Particles, W, board, circle, dough, rr, fillInk, seeded, text, woodBackground, type Live, type MiniEnv, type MiniGame } from './common';
+import { Floaters, GRADE_COLORS, INK, Particles, W, board, circle, cue, dough, rr, fillInk, seeded, text, woodBackground, type Live, type MiniEnv, type MiniGame } from './common';
 
 interface Note {
   t: number;
@@ -12,10 +14,43 @@ interface Note {
   sounded: boolean;
 }
 
-const CX = 600;
-const CY = 380;
-const R = 118;
-const APPROACH = 1.25;
+export const CX = 600;
+export const CY = 380;
+export const R = 118;
+/** seconds a ring takes to close in */
+export const APPROACH = 1.25;
+/** how far out a ring starts */
+export const RING_OUT = 250;
+
+/** the dough's gold target ring; `flash` 0..1 lights it at the moment to tap */
+export function targetRing(g: CanvasRenderingContext2D, flash: number): void {
+  g.lineWidth = 12 + flash * 8;
+  g.strokeStyle = INK;
+  g.beginPath();
+  g.arc(CX, CY, R + 4, 0, Math.PI * 2);
+  g.stroke();
+  g.lineWidth = 7 + flash * 8;
+  g.strokeStyle = flash > 0 ? `rgb(255,${Math.round(209 + flash * 46)},${Math.round(102 + flash * 153)})` : '#F2C14E';
+  g.stroke();
+}
+
+/** a fold ring `k` of the way out (1 = just appeared, 0 = on the dough) */
+export function approachRing(g: CanvasRenderingContext2D, k: number, side: -1 | 1, next: boolean): void {
+  const r = R + 4 + Math.max(0, k) * RING_OUT;
+  const col = side < 0 ? '#F2C14E' : '#F2A08C';
+  g.globalAlpha = next ? 1 : 0.5;
+  g.lineWidth = next ? 10 : 6;
+  g.strokeStyle = INK;
+  g.beginPath();
+  g.arc(CX, CY, r, 0, Math.PI * 2);
+  g.stroke();
+  g.lineWidth = next ? 6 : 3;
+  g.strokeStyle = col;
+  g.stroke();
+  // which hand: a fold mark on that side
+  circle(g, CX + side * r, CY, next ? 12 : 8, col, 3);
+  g.globalAlpha = 1;
+}
 
 export function knead(env: MiniEnv): MiniGame {
   const rnd = seeded(env.seed);
@@ -49,8 +84,9 @@ export function knead(env: MiniEnv): MiniGame {
     bar++;
   }
   const metro = env.buffs.includes('metronome');
-  const perfectW = 0.05 * env.skill * (env.tiny < 1 ? 0.85 : 1);
-  const goodW = 0.115 * env.skill * (env.tiny < 1 ? 0.85 : 1);
+  const wide = (env.tiny < 1 ? 0.85 : 1) * (metro ? 1.25 : 1);
+  const perfectW = 0.05 * env.skill * wide;
+  const goodW = 0.115 * env.skill * wide;
   const scale = [293.7, 329.6, 349.2, 392, 440, 493.9, 523.3, 587.3];
   const melody = notes.map(() => scale[Math.floor(rnd() * scale.length)]!);
   let a0 = -1;
@@ -66,6 +102,9 @@ export function knead(env: MiniEnv): MiniGame {
   let slap = 0;
   let lastE = '';
   let beatFlash = 0;
+  // the glove taps along until you've got the idea (and comes back after a run of misses)
+  let hits = 0;
+  let missRun = 0;
   const fx = new Particles();
   const fl = new Floaters();
 
@@ -112,6 +151,8 @@ export function knead(env: MiniEnv): MiniGame {
       lastE = 'hit';
     }
     combo++;
+    hits++;
+    missRun = 0;
     squash = 1;
     audio.sfx('thump', 0.8);
   }
@@ -149,6 +190,7 @@ export function knead(env: MiniEnv): MiniGame {
         if (n.t < now - goodW) {
           n.judged = 'miss';
           miss++;
+          missRun++;
           combo = 0;
           streak = 0;
           lastE = 'miss';
@@ -164,45 +206,27 @@ export function knead(env: MiniEnv): MiniGame {
     },
     draw(g) {
       const now = heard();
-      // beat guide (Metronome): the board edge pulses on every beat
-      if (metro && beatFlash > 0) {
-        g.globalAlpha = beatFlash * 0.6;
+      // the drum beat, seen: the board's edge pulses on every beat
+      if (beatFlash > 0) {
+        g.globalAlpha = beatFlash * 0.7;
         g.strokeStyle = '#F2C14E';
         g.lineWidth = 10;
         rr(g, CX - 336, CY - 236, 672, 472, 32);
         g.stroke();
         g.globalAlpha = 1;
       }
-      // approach rings
+      // approach rings, the next one bold (later ones drawn first, so the next is on top)
+      const coming: Note[] = [];
       for (const n of notes) {
         if (n.judged) continue;
-        const k = (n.t - now) / APPROACH;
-        if (k > 1) break;
-        if (k < -0.2) continue;
-        const vis = metro ? 1 : k > 0.3 ? 1 : Math.max(0, (k - 0.05) / 0.25);
-        if (vis <= 0) continue;
-        const rr2 = R + Math.max(0, k) * 250;
-        g.globalAlpha = vis * (0.5 + 0.5 * (1 - k));
-        g.lineWidth = 7;
-        g.strokeStyle = INK;
-        g.beginPath();
-        g.arc(CX, CY, rr2, 0, Math.PI * 2);
-        g.stroke();
-        g.lineWidth = 4;
-        g.strokeStyle = n.side < 0 ? '#F2C14E' : '#F2A08C';
-        g.stroke();
-        // which hand: a little fold mark on that side
-        circle(g, CX + n.side * rr2, CY, 9, n.side < 0 ? '#F2C14E' : '#F2A08C', 2.5);
-        g.globalAlpha = 1;
+        if (n.t - now > APPROACH) break;
+        coming.push(n);
+        if (coming.length >= 4) break;
       }
-      // the target line on the dough
-      g.strokeStyle = 'rgba(255,244,224,0.5)';
-      g.lineWidth = 3;
-      g.setLineDash([8, 10]);
-      g.beginPath();
-      g.arc(CX, CY, R + 4, 0, Math.PI * 2);
-      g.stroke();
-      g.setLineDash([]);
+      for (let i = coming.length - 1; i >= 0; i--) approachRing(g, (coming[i]!.t - now) / APPROACH, coming[i]!.side, i === 0);
+      // the target: flashes at the moment to tap
+      const due = coming[0] ? Math.abs(coming[0].t - now) : 1;
+      targetRing(g, due < 0.07 ? 1 - due / 0.07 : 0);
       // smoother dough the better it goes
       const acc = perfect + good + miss ? (perfect + good * 0.6) / (perfect + good + miss) : 0.5;
       const col = `rgb(${Math.round(232 + acc * 14)},${Math.round(200 + acc * 22)},${Math.round(140 + acc * 30)})`;
@@ -239,9 +263,12 @@ export function knead(env: MiniEnv): MiniGame {
       text(g, `${combo}`, CX, CY + R + 150, { size: 54, color: combo >= 8 ? '#FFD166' : '#FFF4E0', stroke: 7 });
       text(g, 'combo', CX, CY + R + 192, { size: 20, font: 'ui', color: '#F3E6CF', stroke: 5 });
       if (streak >= 5) text(g, `${streak} perfect`, CX, CY - R - 90, { size: 26, color: '#FFD166', stroke: 6, font: 'ui' });
-      // left/right hint
-      text(g, 'Tap · Space', W / 2 - 120, 780, { size: 20, font: 'ui', color: 'rgba(255,244,224,0.55)' });
-      void DISPLAY;
+      // the glove taps along with the first beats, and comes back after four misses in a row
+      if (coming[0] && (hits < 4 || missRun >= 4)) {
+        const d = coming[0].t - now;
+        cue(g, CX, CY + 40, 'tap', d > 0.5 ? 0 : 0.5 - d, { label: 'TAP' });
+      }
+      text(g, 'Tap anywhere · Space', W / 2 - 120, 780, { size: 20, font: 'ui', color: 'rgba(255,244,224,0.7)' });
     },
     down() {
       judge();

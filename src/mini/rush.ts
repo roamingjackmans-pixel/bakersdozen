@@ -1,10 +1,11 @@
 // Rush Order: the customer calls out a recipe; remember it, then rebuild it from the pantry in order.
 // Recipes grow by one each time you get one right. Sharp Memory and Nonna Bea keep the recipe up 2 s longer.
 // A Salt Shaker shuffles your pantry shelves after you have looked.
+// Labels say which part you're in (Remember, then Tap in order) and the next spot to fill glows.
 import { audio } from '../audio/audio';
 import type { GameResult } from '../game/types';
 import { PANTRY, pantrySVG, sprite } from '../render/art';
-import { Floaters, Particles, blit, ellipse, fillInk, rr, seeded, text, woodBackground, type Live, type MiniEnv, type MiniGame } from './common';
+import { Floaters, Particles, blit, ellipse, fillInk, pill, rr, seeded, text, woodBackground, type Live, type MiniEnv, type MiniGame } from './common';
 
 interface Recipe {
   items: number[];
@@ -15,10 +16,52 @@ interface Recipe {
   ok: boolean;
 }
 
-const SLOT_W = 150;
-const SLOT_H = 130;
-const GRID_X = 220;
-const GRID_Y = 470;
+export const SLOT_W = 150;
+export const SLOT_H = 130;
+export const GRID_X = 220;
+export const GRID_Y = 470;
+/** top-left of pantry slot i */
+export const slotXY = (i: number): [number, number] => [GRID_X + (i % 4) * (SLOT_W + 24), GRID_Y + Math.floor(i / 4) * (SLOT_H + 20)];
+/** where recipe item i of n sits in the speech bubble (its centre x) */
+export const bubbleX = (i: number, n: number): number => {
+  const gap = Math.min(110, 820 / n);
+  return 570 - ((n - 1) * gap) / 2 + i * gap;
+};
+
+/** the shop counter and the pantry shelves */
+export function pantryBack(g: CanvasRenderingContext2D): void {
+  woodBackground(g);
+  rr(g, 180, 440, 760, 330, 20);
+  fillInk(g, '#5A3A22', 4);
+}
+
+/** the customer at the counter and their speech bubble */
+export function customer(g: CanvasRenderingContext2D): void {
+  ellipse(g, 1100, 360, 70, 80, '#3A2419', 4);
+  ellipse(g, 1100, 250, 50, 54, '#D9A07A', 4);
+  rr(g, 120, 90, 900, 220, 30);
+  fillInk(g, '#FFF4E0', 4);
+  g.beginPath();
+  g.moveTo(1010, 230);
+  g.lineTo(1060, 260);
+  g.lineTo(1010, 270);
+  g.closePath();
+  fillInk(g, '#FFF4E0', 4);
+  g.fillStyle = '#FFF4E0';
+  g.fillRect(1000, 232, 14, 36);
+}
+
+/** a glow behind the next spot to fill in the bubble */
+export function nextSpot(g: CanvasRenderingContext2D, x: number, t: number): void {
+  g.globalAlpha = 0.45 + 0.35 * Math.sin(t * 6);
+  rr(g, x - 46, 150, 92, 100, 18);
+  g.fillStyle = '#FFD166';
+  g.fill();
+  g.globalAlpha = 1;
+  g.lineWidth = 4;
+  g.strokeStyle = '#E8A93A';
+  g.stroke();
+}
 
 export function rush(env: MiniEnv): MiniGame {
   const rnd = seeded(env.seed ^ 0x7a5);
@@ -92,10 +135,7 @@ export function rush(env: MiniEnv): MiniGame {
 
   return {
     background(g) {
-      woodBackground(g);
-      // the shop counter and the shelves
-      rr(g, 180, 440, 760, 330, 20);
-      fillInk(g, '#5A3A22', 4);
+      pantryBack(g);
     },
     update(_t, dt) {
       fx.update(dt);
@@ -116,21 +156,9 @@ export function rush(env: MiniEnv): MiniGame {
         if (env.salted) layout = [...layout].sort(() => rnd() - 0.5);
       }
     },
-    draw(g) {
+    draw(g, t) {
       const r = cur();
-      // the customer (a silhouette at the counter) and their speech bubble
-      ellipse(g, 1100, 360, 70, 80, '#3A2419', 4);
-      ellipse(g, 1100, 250, 50, 54, '#D9A07A', 4);
-      rr(g, 120, 90, 900, 220, 30);
-      fillInk(g, '#FFF4E0', 4);
-      g.beginPath();
-      g.moveTo(1010, 230);
-      g.lineTo(1060, 260);
-      g.lineTo(1010, 270);
-      g.closePath();
-      fillInk(g, '#FFF4E0', 4);
-      g.fillStyle = '#FFF4E0';
-      g.fillRect(1000, 232, 14, 36);
+      customer(g);
       if (r.phase === 'show') {
         const n = r.items.length;
         const gap = Math.min(110, 820 / n);
@@ -146,10 +174,11 @@ export function rush(env: MiniEnv): MiniGame {
         g.fillStyle = '#C3B0F0';
         g.fill();
       } else {
-        // what you've rebuilt so far, the rest as question marks
+        // what you've rebuilt so far, the rest as question marks (the next one glowing)
         const n = r.items.length;
         const gap = Math.min(110, 820 / n);
         const x0 = 570 - ((n - 1) * gap) / 2;
+        if (r.phase === 'build') nextSpot(g, x0 + r.got * gap, t);
         for (let i = 0; i < n; i++) {
           if (i < r.got) {
             const img = imgs[r.items[i]!]!;
@@ -168,6 +197,9 @@ export function rush(env: MiniEnv): MiniGame {
         blit(g, img, cx + SLOT_W / 2 - 44, cy + 14, 88, 88);
         text(g, `${i + 1}`, cx + 18, cy + 18, { size: 18, color: '#8A5A35', font: 'ui' });
       }
+      // which part this is
+      if (r.phase === 'show') pill(g, 'REMEMBER', 570, 340, 24);
+      else if (r.phase === 'build') pill(g, 'TAP THEM IN ORDER', 560, 442, 24);
       fx.draw(g);
       fl.draw(g);
       if (combo >= 2) text(g, `${combo} orders`, 1100, 470, { size: 26, color: '#FFD166', stroke: 6, font: 'ui' });

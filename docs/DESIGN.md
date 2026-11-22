@@ -67,9 +67,9 @@ buffs have one copy. Catch-up: last place in ★ pays 25% less; Pip pays 20% les
 | --- | --- | --- |
 | Sharp Memory | 6 | Rush Order recipe +2 s |
 | Steady Hands | 6 | Decorate margin ×1.35 |
-| Metronome | 5 | Knead rings stay visible, the board pulses on the beat, louder beat |
+| Metronome | 5 | Knead timing windows ×1.25 and a louder beat |
 | Baker's Nose | 5 | Proof shimmer from 13% below the peak |
-| Calibrated Scale | 5 | a green target zone on the dial |
+| Calibrated Scale | 5 | a green zone around the target and a needle half as wobbly |
 | Extra Oven Slot | 12 (pooled) | +1 oven slot for the night |
 | Apprentice | 14 (pooled) | +1 tray loaf at each of the next 3 tallies |
 | Bribe the Inspector | 18 (pooled) | cancels the next fine |
@@ -85,7 +85,7 @@ everyone a free shaker and cloud each order and nobody is caught.
 
 | Game | Input | q | Skill makes it easier by | Salted |
 | --- | --- | --- | --- | --- |
-| Knead | tap / Space on the beat | (perfect + 0.6 good) ÷ (beats + 0.6 × stray taps) | wider windows (±50 / ±115 ms at skill 3) | some beats land off the grid |
+| Knead | tap / Space as each ring meets the dough | (perfect + 0.6 good) ÷ (beats + 0.6 × stray taps) | wider windows (±50 / ±115 ms at skill 3) | some beats land off the grid |
 | Proof | hold to rise, release | mean of rise ÷ peak (collapse = 0) × pace | longer tremble before the peak | the rise stutters |
 | Shared Oven | tap slot to load, tap tray to pull | grades of your trays (perfect 1, golden 0.82, dark 0.45) | wider golden window, longer smoke | — |
 | Decorate | drag the piping bag | coverage × (1 − 1.4 off-line ink) × precision × pace | wider margin | the guide drifts |
@@ -96,6 +96,25 @@ The Shared Oven is the one real-time shared game: the host runs it (`src/game/ov
 trays from start times on the host clock. Pulls are judged at the moment the player tapped (converted to host time,
 up to 260 ms back). Perfect zone ±240 ms; Joe's parry ±70 ms. Burnt trays take a loaf off the owner's tray. Dawn adds
 a prep board (knead 3 taps before a tray can go in), 6 trays each, 2 extra slots and golden trays worth ×1.6.
+AI rivals pull and reload in the same tick, so an AI leaves a slot it has just freed to a player who is waiting with
+fewer trays in, for up to 2.5 s (`aiOven`, `HUMAN_GRACE_MS`; `tests/oven.test.ts`). With no players waiting, AI play is
+unchanged.
+
+**Where to tap, without sound or words** (`cue()` in `src/mini/common.ts`, `src/mini/demos.ts`). A white glove
+shows the move on the very spot, with a one-word label: TAP, HOLD, DRAG, LET GO, LOAD.
+- *Before playing:* each game has a looping demo of the move (the glove acting at the right moment over the game's own
+  scenery). It plays beside the order card ("How to play") and over the dimmed game during the 3-2-1, under a bar
+  with the game's name, its rule and the count.
+- *While playing:* the glove comes back where it helps. Knead taps along with the first four beats (and after four
+  misses in a row); Proof shows HOLD on the dough, then "let go to bake" on the first two; Decorate drags from the
+  green dot until you start (or after 3 s idle, from where you stopped); Scale holds the sack, then taps Weigh once
+  there's flour in; the Oven taps a free slot (LOAD) until you've loaded two; at Dawn it taps the prep board.
+  Labels name the part you're in: Rush Order's REMEMBER / TAP THEM IN ORDER (the next spot glows), the Oven's PULL
+  over your golden tray and SAVE over a rival's smoking one.
+- *The beat, seen:* Knead's rings stay solid all the way in (the next one bold), the gold target ring flashes at the
+  moment to tap, and the board's edge pulses on every drum beat. Decorate's line has arrows showing its way round;
+  Scale's dial has a red target mark; Proof's ruler is shaded from 50% up, where doughs start to give.
+- In-game gloves are off during the 3-2-1 (`cueGate`), so only the demo shows then.
 
 Modifiers layer over every game in `src/mini/runner.ts`: Flour Storm (drifting clouds), Mirror Kitchen (input
 mirrored, a cursor shows where your hand is), Haunted (a ghost drifts by; oven timers wobble), Swap Shop (halfway the

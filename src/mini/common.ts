@@ -301,6 +301,163 @@ export function seeded(seed: number): () => number {
 
 export const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
 
+// ------------------------------------------------------------------ input cues
+// Where to act and when, without sound or words: a white glove that taps, holds, drags or lets go on the very spot,
+// with a short label. Used live (the first moves, and again when a player is stuck), in the 3-2-1 and on the order
+// card. The glove is drawn once into a bitmap.
+
+export type CueKind = 'tap' | 'hold' | 'drag' | 'release' | 'press';
+
+/** off while the runner draws the game under the 3-2-1 (the demo shows the move then, not the game's own glove) */
+export const cueGate = { on: true };
+
+let gloveSprite: HTMLCanvasElement | null = null;
+/** an 80×110 glove pointing up, fingertip at (40, 4), drawn at 2× */
+function glove(): HTMLCanvasElement {
+  if (gloveSprite) return gloveSprite;
+  const c = document.createElement('canvas');
+  c.width = 160;
+  c.height = 220;
+  const g = c.getContext('2d')!;
+  g.scale(2, 2);
+  const white = '#FFFDF8';
+  ellipse(g, 20, 62, 9, 15, white, 3, -0.5);
+  rr(g, 15, 40, 52, 50, 16);
+  fillInk(g, white, 3);
+  rr(g, 46, 36, 14, 22, 7);
+  fillInk(g, white, 3);
+  rr(g, 56, 42, 12, 20, 6);
+  fillInk(g, white, 3);
+  rr(g, 31, 4, 18, 58, 9);
+  fillInk(g, white, 3);
+  rr(g, 20, 84, 42, 20, 6);
+  fillInk(g, '#F2A541', 3);
+  g.strokeStyle = 'rgba(30,18,12,0.35)';
+  g.lineWidth = 2;
+  g.beginPath();
+  g.moveTo(35, 70);
+  g.quadraticCurveTo(44, 74, 53, 70);
+  g.stroke();
+  gloveSprite = c;
+  return c;
+}
+
+/** a label in a gold pill, centred on (x, y) */
+export function pill(g: CanvasRenderingContext2D, s: string, x: number, y: number, size = 22, fill = '#FFD166'): void {
+  g.font = `900 ${size}px ${UI}`;
+  const w = g.measureText(s).width + size * 1.3;
+  const h = size * 1.75;
+  rr(g, x - w / 2, y - h / 2, w, h, h / 2);
+  fillInk(g, fill, 3);
+  text(g, s, x, y + 1, { size, font: 'ui', color: INK });
+}
+
+const ease = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v * v * (3 - 2 * v));
+
+/**
+ * The glove acting on (x, y). `p` is where it is in its loop, 0..1: a tap presses at 0.5; a hold presses and a ring
+ * fills; a drag runs from (x, y) by (dx, dy); a release lets go at 0.3 and lifts away.
+ */
+export function cue(g: CanvasRenderingContext2D, x: number, y: number, kind: CueKind, p: number, o: { label?: string; dx?: number; dy?: number; s?: number; alpha?: number; above?: boolean } = {}): void {
+  const s = o.s ?? 1;
+  const a = o.alpha ?? 1;
+  if (a <= 0.01 || !cueGate.on) return;
+  g.globalAlpha = a;
+  p = ((p % 1) + 1) % 1;
+  let fx = x;
+  let fy = y;
+  let lift = 0;
+  g.lineCap = 'round';
+  if (kind === 'tap') {
+    lift = 18 * s * (0.5 + 0.5 * Math.cos(p * Math.PI * 2));
+    if (p >= 0.5) {
+      const k = (p - 0.5) / 0.5;
+      g.globalAlpha = a * (1 - k);
+      g.strokeStyle = '#FFD166';
+      g.lineWidth = 5 * s;
+      g.beginPath();
+      g.arc(x, y, (12 + k * 38) * s, 0, Math.PI * 2);
+      g.stroke();
+      g.globalAlpha = a;
+    }
+  } else if (kind === 'hold') {
+    lift = p < 0.12 ? 18 * s * (1 - p / 0.12) : 0;
+    if (p >= 0.12) {
+      g.strokeStyle = INK;
+      g.lineWidth = 10 * s;
+      g.beginPath();
+      g.arc(x, y, 30 * s, 0, Math.PI * 2);
+      g.stroke();
+      g.strokeStyle = '#FFD166';
+      g.lineWidth = 6 * s;
+      g.beginPath();
+      g.arc(x, y, 30 * s, -Math.PI / 2, -Math.PI / 2 + ((p - 0.12) / 0.88) * Math.PI * 2);
+      g.stroke();
+    }
+  } else if (kind === 'drag') {
+    const dx = o.dx ?? 80;
+    const dy = o.dy ?? 0;
+    // the way to go: a dashed arrow
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len;
+    const uy = dy / len;
+    g.strokeStyle = '#FFD166';
+    g.lineWidth = 6 * s;
+    g.setLineDash([10 * s, 10 * s]);
+    g.beginPath();
+    g.moveTo(x, y);
+    g.lineTo(x + dx - ux * 14 * s, y + dy - uy * 14 * s);
+    g.stroke();
+    g.setLineDash([]);
+    g.beginPath();
+    g.moveTo(x + dx, y + dy);
+    g.lineTo(x + dx - ux * 22 * s - uy * 13 * s, y + dy - uy * 22 * s + ux * 13 * s);
+    g.lineTo(x + dx - ux * 22 * s + uy * 13 * s, y + dy - uy * 22 * s - ux * 13 * s);
+    g.closePath();
+    g.fillStyle = '#FFD166';
+    g.fill();
+    g.lineWidth = 2;
+    g.strokeStyle = INK;
+    g.stroke();
+    const m = ease(Math.min(1, p / 0.8));
+    fx = x + dx * m;
+    fy = y + dy * m;
+    lift = p < 0.08 ? 14 * s * (1 - p / 0.08) : p > 0.88 ? 14 * s * ((p - 0.88) / 0.12) : 0;
+    if (p > 0.9) g.globalAlpha = a * (1 - (p - 0.9) / 0.1);
+  } else if (kind === 'press') {
+    // just pressed down on the spot (a demo moving it along a line)
+  } else {
+    // release: pressed (the ring), then off and away
+    const k = p < 0.3 ? 0 : ease((p - 0.3) / 0.5);
+    lift = 40 * s * k;
+    if (p < 0.3) {
+      g.strokeStyle = '#FFD166';
+      g.lineWidth = 6 * s;
+      g.beginPath();
+      g.arc(x, y, 26 * s, 0, Math.PI * 2);
+      g.stroke();
+    }
+    g.globalAlpha = a * (p > 0.85 ? 1 - (p - 0.85) / 0.15 : 1);
+  }
+  // the glove sits below the spot, fingertip on it (drawn above the spot when there's no room below)
+  const sp = glove();
+  const w = 80 * s;
+  const h = 110 * s;
+  if (o.above) {
+    g.save();
+    g.translate(fx, fy - lift);
+    g.rotate(Math.PI);
+    g.drawImage(sp, -w / 2, -4 * s, w, h);
+    g.restore();
+  } else g.drawImage(sp, fx - w / 2, fy - 4 * s + lift, w, h);
+  g.globalAlpha = a;
+  if (o.label) pill(g, o.label, x, o.above ? y - h - 26 * s : y + h + 22 * s, Math.round(22 * s));
+  g.globalAlpha = 1;
+}
+
+/** where a looping cue is in its loop at time t (seconds) */
+export const loop = (t: number, period: number, offset = 0): number => (((t / period + offset) % 1) + 1) % 1;
+
 const rasters = new WeakMap<HTMLImageElement, Map<number, HTMLCanvasElement>>();
 /** draw an SVG sprite through a bitmap made once at 2× its drawn size */
 export function blit(g: CanvasRenderingContext2D, img: HTMLImageElement | undefined, x: number, y: number, w: number, h: number): void {

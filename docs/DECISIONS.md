@@ -99,3 +99,18 @@ flames are HTML layers; the market, 13th-loaf call and rival bars update only wh
 taps); the tray patches its slots; portraits are cached; canvas density is capped at 1.5× and steps down on a slow
 device; SVG sprites are rasterised once; canvases free their memory when a game ends; the music skips a stalled
 backlog instead of playing it at once.
+
+**D25 — Every mini game shows where and when to act (owner, 2026-11-21).** Players couldn't tell where to tap or what
+"the beat" was, and Knead was unreadable with the sound off (its rings faded out before they landed). Each game now
+has a looping demo (order card and 3-2-1) and a glove cue on the spot during play; the beat is drawn (solid rings, a
+target that flashes at the moment, the board pulsing each beat). Cues are labels and icons, so the handoff's
+no-narration rule holds. Two buffs from the handoff changed because what they showed is now everyone's: Metronome
+("visible beat guide") widens Knead's timing windows by 25%, and Calibrated Scale ("rough weight indicator") adds a
+zone around the now-standard target mark and halves the needle's wobble. The game's rule lines were rewritten to say
+the move ("Tap as each ring hits the dough", not "Tap on the beat").
+
+**D26 — A player always gets a turn at the Shared Oven.** AI rivals pulled and reloaded in the same tick, so with
+three AIs and three slots a player could wait the whole game with a tray in hand ("Tap a slot" with nowhere to tap).
+An AI now leaves a just-freed slot to a waiting player with fewer trays in for up to 2.5 s, after which it's anyone's
+(an idle player doesn't stall the bakery). AI-only nights, and so the balance numbers, are unchanged; the queue label
+says "Oven full · wait" when there's no slot.

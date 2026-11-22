@@ -1,14 +1,118 @@
 // Scale: weigh by feel. Hold to pour flour (it pours faster the longer you hold), tap for a pinch, then Weigh.
-// The needle wobbles (less with Scale skill); Calibrated Scale marks the target zone on the dial.
+// The needle wobbles (less with Scale skill). The target is marked on the dial; Calibrated Scale adds a zone around
+// it and steadies the needle. The glove shows where to hold (the sack) and, once you've poured, the Weigh button.
 // A nod to the old short-weight laws: the Inspector checks every gram.
 import { audio } from '../audio/audio';
 import type { GameResult } from '../game/types';
-import { Floaters, INK, Particles, circle, ellipse, fillInk, rr, seeded, text, woodBackground, type Live, type MiniEnv, type MiniGame } from './common';
+import { Floaters, INK, Particles, circle, cue, ellipse, fillInk, loop, rr, seeded, text, woodBackground, type Live, type MiniEnv, type MiniGame } from './common';
 
-const DX = 820;
-const DY = 330;
-const DR = 190;
-const MAXG = 1000;
+export const DX = 820;
+export const DY = 330;
+export const DR = 190;
+export const MAXG = 1000;
+export const WEIGH = { x: 1030, y: 640, w: 200, h: 90 };
+export const SACK = { x: 520, y: 250 };
+
+const ang = (w: number): number => -Math.PI * 0.75 + (w / MAXG) * Math.PI * 1.5;
+
+/** the dial: its face, the target mark (and Calibrated Scale's zone), and the needle at `shown` grams */
+export function dial(g: CanvasRenderingContext2D, shown: number, target: number, zone: boolean): void {
+  circle(g, DX, DY, DR + 18, '#B9862C', 5);
+  circle(g, DX, DY, DR, '#FFF4E0', 4);
+  for (let w = 0; w <= MAXG; w += 50) {
+    const a = ang(w);
+    const r1 = w % 250 === 0 ? DR - 34 : DR - 18;
+    g.strokeStyle = INK;
+    g.lineWidth = w % 250 === 0 ? 4 : 2;
+    g.beginPath();
+    g.moveTo(DX + Math.cos(a) * r1, DY + Math.sin(a) * r1);
+    g.lineTo(DX + Math.cos(a) * (DR - 6), DY + Math.sin(a) * (DR - 6));
+    g.stroke();
+    if (w % 250 === 0) text(g, `${w}`, DX + Math.cos(a) * (DR - 58), DY + Math.sin(a) * (DR - 58), { size: 20, color: '#2A1A12', font: 'ui' });
+  }
+  if (zone) {
+    g.strokeStyle = 'rgba(94,154,88,0.85)';
+    g.lineWidth = 18;
+    g.beginPath();
+    g.arc(DX, DY, DR - 16, ang(target - 22), ang(target + 22));
+    g.stroke();
+  }
+  // the target: a red pointer on the brass rim and a line in to the numbers
+  const ta = ang(target);
+  const cx = Math.cos(ta);
+  const sy = Math.sin(ta);
+  g.strokeStyle = '#A8322D';
+  g.lineWidth = 5;
+  g.beginPath();
+  g.moveTo(DX + cx * (DR - 40), DY + sy * (DR - 40));
+  g.lineTo(DX + cx * (DR - 2), DY + sy * (DR - 2));
+  g.stroke();
+  g.beginPath();
+  g.moveTo(DX + cx * (DR + 2), DY + sy * (DR + 2));
+  g.lineTo(DX + cx * (DR + 30) - sy * 14, DY + sy * (DR + 30) + cx * 14);
+  g.lineTo(DX + cx * (DR + 30) + sy * 14, DY + sy * (DR + 30) - cx * 14);
+  g.closePath();
+  fillInk(g, '#E06B5F', 3);
+  const na = ang(Math.max(0, Math.min(MAXG, shown)));
+  g.strokeStyle = INK;
+  g.lineWidth = 8;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(DX, DY);
+  g.lineTo(DX + Math.cos(na) * (DR - 26), DY + Math.sin(na) * (DR - 26));
+  g.stroke();
+  g.strokeStyle = '#A8322D';
+  g.lineWidth = 4;
+  g.stroke();
+  circle(g, DX, DY, 14, '#2A1A12', 3);
+}
+
+/** the counter, the dial's stand and its foot */
+export function housing(g: CanvasRenderingContext2D): void {
+  woodBackground(g);
+  rr(g, DX - 60, DY + DR - 10, 120, 170, 16);
+  fillInk(g, '#8A5A35', 4);
+  ellipse(g, DX, DY + 380, 210, 30, '#6B4428', 4);
+}
+
+/** the bowl on the counter with `grams` of flour in it */
+export function flourBowl(g: CanvasRenderingContext2D, grams: number): void {
+  ellipse(g, 560, 600, 130, 30, '#C8553D', 4);
+  const pile = Math.min(1, grams / MAXG);
+  g.beginPath();
+  g.moveTo(450, 590);
+  g.quadraticCurveTo(560, 590 - 30 - pile * 120, 670, 590);
+  g.closePath();
+  fillInk(g, '#FFF8EA', 3);
+}
+
+/** the flour sack and its scoop (the place to hold), pouring when `pour` > 0 (0..1 = stream width) */
+export function sack(g: CanvasRenderingContext2D, pour: number): void {
+  ellipse(g, SACK.x, SACK.y, 90, 100, '#E9D7B0', 4);
+  text(g, 'FLOUR', SACK.x, SACK.y + 8, { size: 26, color: '#8A5A35' });
+  rr(g, SACK.x + 20, SACK.y + 50, 60, 30, 10);
+  fillInk(g, '#9AA1AD', 3);
+  if (pour > 0) {
+    g.fillStyle = 'rgba(255,248,234,0.9)';
+    const wpx = 6 + pour * 16;
+    g.fillRect(SACK.x + 40 - wpx / 2, SACK.y + 80, wpx, 230);
+  }
+}
+
+/** the Weigh button, lit when there's something to weigh */
+export function weighButton(g: CanvasRenderingContext2D, ready: boolean, glow = 0): void {
+  const b = WEIGH;
+  if (glow > 0) {
+    g.globalAlpha = glow;
+    rr(g, b.x - 8, b.y - 8, b.w + 16, b.h + 16, 24);
+    g.fillStyle = '#FFD166';
+    g.fill();
+    g.globalAlpha = 1;
+  }
+  rr(g, b.x, b.y, b.w, b.h, 18);
+  fillInk(g, ready ? '#F2A541' : '#8A7A66', 4);
+  text(g, 'Weigh', b.x + b.w / 2, b.y + b.h / 2, { size: 34, color: '#2A1A12' });
+}
 
 interface Target {
   g: number;
@@ -25,7 +129,7 @@ export function scale(env: MiniEnv): MiniGame {
   };
   add();
   const cal = env.buffs.includes('scale');
-  const wobble = 42 / env.skill / (env.tiny < 1 ? 0.8 : 1);
+  const wobble = (42 / env.skill / (env.tiny < 1 ? 0.8 : 1)) * (cal ? 0.5 : 1);
   let holding = false;
   let holdT = 0;
   let idle = 0;
@@ -38,7 +142,7 @@ export function scale(env: MiniEnv): MiniGame {
   let flicker = 0;
   const fx = new Particles();
   const fl = new Floaters();
-  const weighBtn = { x: 1030, y: 640, w: 200, h: 90 };
+  const weighBtn = WEIGH;
 
   const cur = (): Target => targets[targets.length - 1]!;
 
@@ -71,11 +175,7 @@ export function scale(env: MiniEnv): MiniGame {
 
   return {
     background(g) {
-      woodBackground(g);
-      // the dial's housing (static parts)
-      rr(g, DX - 60, DY + DR - 10, 120, 170, 16);
-      fillInk(g, '#8A5A35', 4);
-      ellipse(g, DX, DY + 380, 210, 30, '#6B4428', 4);
+      housing(g);
     },
     update(_t, dt) {
       fx.update(dt);
@@ -111,61 +211,11 @@ export function scale(env: MiniEnv): MiniGame {
       needleV *= 0.82;
       shown += needleV * dt * 8;
     },
-    draw(g) {
+    draw(g, time) {
       const t = cur();
-      // the scoop and the sack
-      ellipse(g, 520, 250, 90, 100, '#E9D7B0', 4);
-      g.fillStyle = '#8A5A35';
-      text(g, 'FLOUR', 520, 258, { size: 26, color: '#8A5A35' });
-      rr(g, 540, 300, 60, 30, 10);
-      fillInk(g, '#9AA1AD', 3);
-      if (holding && !t.done) {
-        g.fillStyle = 'rgba(255,248,234,0.9)';
-        const wpx = 6 + Math.min(1, holdT / 1.9) * 16;
-        g.fillRect(560 - wpx / 2, 330, wpx, 230);
-      }
-      // the bowl and its flour pile
-      ellipse(g, 560, 600, 130, 30, '#C8553D', 4);
-      const pile = Math.min(1, t.w / MAXG);
-      g.beginPath();
-      g.moveTo(450, 590);
-      g.quadraticCurveTo(560, 590 - 30 - pile * 120, 670, 590);
-      g.closePath();
-      fillInk(g, '#FFF8EA', 3);
-      // the dial
-      circle(g, DX, DY, DR + 18, '#B9862C', 5);
-      circle(g, DX, DY, DR, '#FFF4E0', 4);
-      const ang = (w: number): number => -Math.PI * 0.75 + (w / MAXG) * Math.PI * 1.5;
-      for (let w = 0; w <= MAXG; w += 50) {
-        const a = ang(w);
-        const r1 = w % 250 === 0 ? DR - 34 : DR - 18;
-        g.strokeStyle = INK;
-        g.lineWidth = w % 250 === 0 ? 4 : 2;
-        g.beginPath();
-        g.moveTo(DX + Math.cos(a) * r1, DY + Math.sin(a) * r1);
-        g.lineTo(DX + Math.cos(a) * (DR - 6), DY + Math.sin(a) * (DR - 6));
-        g.stroke();
-        if (w % 250 === 0) text(g, `${w}`, DX + Math.cos(a) * (DR - 58), DY + Math.sin(a) * (DR - 58), { size: 20, color: '#2A1A12', font: 'ui' });
-      }
-      if (cal) {
-        g.strokeStyle = 'rgba(94,154,88,0.85)';
-        g.lineWidth = 18;
-        g.beginPath();
-        g.arc(DX, DY, DR - 16, ang(t.g - 22), ang(t.g + 22));
-        g.stroke();
-      }
-      const na = ang(Math.max(0, Math.min(MAXG, shown)));
-      g.strokeStyle = INK;
-      g.lineWidth = 8;
-      g.lineCap = 'round';
-      g.beginPath();
-      g.moveTo(DX, DY);
-      g.lineTo(DX + Math.cos(na) * (DR - 26), DY + Math.sin(na) * (DR - 26));
-      g.stroke();
-      g.strokeStyle = '#A8322D';
-      g.lineWidth = 4;
-      g.stroke();
-      circle(g, DX, DY, 14, '#2A1A12', 3);
+      sack(g, holding && !t.done ? Math.min(1, holdT / 1.9) : 0);
+      flourBowl(g, t.w);
+      dial(g, shown, t.g, cal);
       // the target card (Salt Shaker smudges a digit)
       rr(g, 120, 120, 250, 130, 14);
       fillInk(g, '#F3E3C3', 4);
@@ -174,11 +224,14 @@ export function scale(env: MiniEnv): MiniGame {
       if (env.salted && Math.sin(flicker * 3) > -0.3) label = label.replace(/\d(?=\d g)/, '?');
       text(g, label, 245, 205, { size: 52, color: '#2A1A12' });
       if (t.done) text(g, `${Math.round(t.w)} g`, DX, DY + 90, { size: 40, color: '#2A1A12' });
-      // weigh button
-      rr(g, weighBtn.x, weighBtn.y, weighBtn.w, weighBtn.h, 18);
-      fillInk(g, t.w > 0 && !t.done ? '#F2A541' : '#8A7A66', 4);
-      text(g, 'Weigh', weighBtn.x + weighBtn.w / 2, weighBtn.y + weighBtn.h / 2, { size: 34, color: '#2A1A12' });
-      text(g, 'Hold to pour · Enter', 560, 770, { size: 20, font: 'ui', color: 'rgba(255,244,224,0.55)' });
+      const ready = t.w > 0 && !t.done;
+      weighButton(g, ready, ready && !holding ? 0.25 + 0.2 * Math.sin(time * 6) : 0);
+      text(g, 'Space: pour · Enter: weigh', 560, 770, { size: 20, font: 'ui', color: 'rgba(255,244,224,0.7)' });
+      // the glove: hold the sack to pour; once there's flour in, tap Weigh
+      if (!t.done && pause <= 0) {
+        if (t.w <= 0 && !holding) cue(g, SACK.x, SACK.y + 20, 'hold', loop(time, 1.6), { label: 'HOLD TO POUR' });
+        else if (ready && !holding && idle > 0.5) cue(g, WEIGH.x + WEIGH.w / 2, WEIGH.y + 12, 'tap', loop(time, 1), { above: true, label: 'TAP' });
+      }
       // past results
       targets
         .filter((x) => x.done)

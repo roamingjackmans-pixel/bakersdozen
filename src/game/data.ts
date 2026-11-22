@@ -187,13 +187,13 @@ export interface GameDef {
   color: string;
 }
 export const GAMES: Record<GameId, GameDef> = {
-  knead: { id: 'knead', name: 'Knead', how: 'Tap on the beat', input: 'Tap / Space', color: '#F2C14E' },
-  proof: { id: 'proof', name: 'Proof', how: 'Hold to rise · let go to bake', input: 'Hold / Space', color: '#F2A08C' },
-  oven: { id: 'oven', name: 'Shared Oven', how: 'Load · pull when golden', input: 'Tap trays', color: '#E07A1F' },
-  decorate: { id: 'decorate', name: 'Decorate', how: 'Trace the line', input: 'Drag', color: '#F0A8CF' },
-  scale: { id: 'scale', name: 'Scale', how: 'Hold to pour · hit the weight', input: 'Hold / Space', color: '#93D3D2' },
-  rush: { id: 'rush', name: 'Rush Order', how: 'Remember · rebuild', input: 'Tap / 1-8', color: '#C3B0F0' },
-  dawn: { id: 'dawn', name: 'Dawn', how: 'Every station at once', input: 'Tap · hold · drag', color: '#FFD27A' },
+  knead: { id: 'knead', name: 'Knead', how: 'Tap as each ring hits the dough', input: 'Tap / Space', color: '#F2C14E' },
+  proof: { id: 'proof', name: 'Proof', how: 'Hold to rise · let go before it sinks', input: 'Hold / Space', color: '#F2A08C' },
+  oven: { id: 'oven', name: 'Shared Oven', how: 'Tap a slot to load · pull when gold', input: 'Tap / 1-9', color: '#E07A1F' },
+  decorate: { id: 'decorate', name: 'Decorate', how: 'Drag from the green dot along the line', input: 'Drag', color: '#F0A8CF' },
+  scale: { id: 'scale', name: 'Scale', how: 'Hold to pour · Weigh at the red mark', input: 'Hold / Space · Enter', color: '#93D3D2' },
+  rush: { id: 'rush', name: 'Rush Order', how: 'Remember it · tap it back in order', input: 'Tap / 1-8', color: '#C3B0F0' },
+  dawn: { id: 'dawn', name: 'Dawn', how: 'Knead, load and pull, all at once', input: 'Tap', color: '#FFD27A' },
 };
 export const MINI_IDS: MiniId[] = ['knead', 'proof', 'oven', 'decorate', 'scale', 'rush'];
 
@@ -212,9 +212,9 @@ export interface BuffDef {
 export const BUFFS: Record<BuffId, BuffDef> = {
   memory: { id: 'memory', name: 'Sharp Memory', kind: 'personal', effect: 'Rush Order recipe stays up 2 s longer.', price: 6, color: '#C3B0F0', game: 'rush' },
   hands: { id: 'hands', name: 'Steady Hands', kind: 'personal', effect: 'Wider tracing margin in Decorate.', price: 6, color: '#A8D69F', game: 'decorate' },
-  metronome: { id: 'metronome', name: 'Metronome', kind: 'personal', effect: 'Visible beat guide in Knead.', price: 5, color: '#F2C14E', game: 'knead' },
+  metronome: { id: 'metronome', name: 'Metronome', kind: 'personal', effect: 'Wider beat timing in Knead.', price: 5, color: '#F2C14E', game: 'knead' },
   nose: { id: 'nose', name: "Baker's Nose", kind: 'personal', effect: 'Shimmer warning before dough collapses in Proof.', price: 5, color: '#F2A08C', game: 'proof' },
-  scale: { id: 'scale', name: 'Calibrated Scale', kind: 'personal', effect: 'Rough weight indicator in Scale.', price: 5, color: '#93D3D2', game: 'scale' },
+  scale: { id: 'scale', name: 'Calibrated Scale', kind: 'personal', effect: 'Steadier needle and a target zone in Scale.', price: 5, color: '#93D3D2', game: 'scale' },
   ovenslot: { id: 'ovenslot', name: 'Extra Oven Slot', kind: 'team', effect: 'One more slot in the Shared Oven.', price: 12, color: '#E07A1F' },
   apprentice: { id: 'apprentice', name: 'Apprentice', kind: 'team', effect: 'Auto-fills 1 tray item per round for 3 rounds.', price: 14, color: '#A8D69F' },
   bribe: { id: 'bribe', name: 'Bribe the Inspector', kind: 'team', effect: 'Cancels one fine.', price: 18, color: '#E8B84A' },

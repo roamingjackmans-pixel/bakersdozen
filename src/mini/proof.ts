@@ -1,9 +1,10 @@
 // Proof: push your luck. Hold to let the dough rise, let go to bake it. Every dough has a hidden peak: rise past it
 // and it collapses. Bailing early is safe but plain. Let go at the exact peak for a Natural 20.
-// The dough trembles just before it goes (longer with Proof skill); Baker's Nose adds a shimmer warning.
+// The dough trembles just before it goes (longer with Proof skill); Baker's Nose adds a shimmer warning. The glove
+// shows where to hold, the first doughs say "let go to bake", and the ruler is shaded where doughs start to give.
 import { audio } from '../audio/audio';
 import type { GameResult } from '../game/types';
-import { Floaters, INK, Particles, circle, ellipse, fillInk, rr, seeded, sparkle, text, woodBackground, type Live, type MiniEnv, type MiniGame } from './common';
+import { Floaters, INK, Particles, cue, ellipse, fillInk, loop, pill, rr, seeded, sparkle, text, woodBackground, type Live, type MiniEnv, type MiniGame } from './common';
 
 interface Dough {
   peak: number;
@@ -13,8 +14,67 @@ interface Dough {
   t: number;
 }
 
-const BX = 560;
-const BY = 560;
+export const BX = 560;
+export const BY = 560;
+
+/** the proofing cabinet's ruler, shaded from 50 % up: most doughs give somewhere in there */
+export function ruler(g: CanvasRenderingContext2D): void {
+  rr(g, 860, 150, 90, 420, 14);
+  fillInk(g, '#E9D7B0', 4);
+  const gr = g.createLinearGradient(0, 360, 0, 160);
+  gr.addColorStop(0, 'rgba(242,193,78,0.15)');
+  gr.addColorStop(0.5, 'rgba(242,140,60,0.45)');
+  gr.addColorStop(1, 'rgba(200,60,45,0.6)');
+  g.fillStyle = gr;
+  g.fillRect(863, 160, 84, 200);
+  for (let i = 0; i <= 10; i++) {
+    const y = 560 - i * 40;
+    g.fillStyle = INK;
+    g.fillRect(860, y - 1.5, i % 5 === 0 ? 40 : 24, 3);
+    if (i % 5 === 0) text(g, `${i * 10}`, 920, y, { size: 22, color: '#2A1A12', font: 'ui' });
+  }
+}
+
+/** the dough `h` high in the bowl (0..1+), shaken sideways by `sx`; returns the dough's top */
+export function bowl(g: CanvasRenderingContext2D, h: number, fill: string, sx = 0): number {
+  ellipse(g, BX, BY + 10, 230, 40, '#5A3A22', 4);
+  const top = BY - 30 - h * 380;
+  g.beginPath();
+  g.moveTo(BX - 200, BY);
+  g.bezierCurveTo(BX - 205 + sx, top + 40, BX - 120 + sx, top, BX + sx, top);
+  g.bezierCurveTo(BX + 120 + sx, top, BX + 205 + sx, top + 40, BX + 200, BY);
+  g.closePath();
+  fillInk(g, fill, 4);
+  g.fillStyle = 'rgba(255,255,255,0.32)';
+  g.beginPath();
+  g.ellipse(BX - 70 + sx, top + 50, 50, 18, -0.3, 0, Math.PI * 2);
+  g.fill();
+  // bowl front
+  g.beginPath();
+  g.moveTo(BX - 240, BY - 10);
+  g.quadraticCurveTo(BX, BY + 220, BX + 240, BY - 10);
+  g.closePath();
+  fillInk(g, '#C8553D', 4);
+  g.strokeStyle = '#E98A74';
+  g.lineWidth = 4;
+  g.beginPath();
+  g.moveTo(BX - 180, BY + 30);
+  g.quadraticCurveTo(BX - 60, BY + 110, BX + 40, BY + 112);
+  g.stroke();
+  return top;
+}
+
+/** the rise marker on the ruler */
+export function riseMark(g: CanvasRenderingContext2D, h: number): void {
+  const my = 560 - Math.min(1.1, h) * 400;
+  g.beginPath();
+  g.moveTo(850, my);
+  g.lineTo(826, my - 14);
+  g.lineTo(826, my + 14);
+  g.closePath();
+  fillInk(g, '#F2A541', 3);
+  text(g, `${Math.round(h * 100)}%`, 790, my, { size: 30, stroke: 6 });
+}
 
 export function proof(env: MiniEnv): MiniGame {
   const rnd = seeded(env.seed ^ 0x9f3);
@@ -89,15 +149,7 @@ export function proof(env: MiniEnv): MiniGame {
   return {
     background(g) {
       woodBackground(g);
-      // the proofing cabinet's ruler
-      rr(g, 860, 150, 90, 420, 14);
-      fillInk(g, '#E9D7B0', 4);
-      for (let i = 0; i <= 10; i++) {
-        const y = 560 - i * 40;
-        g.fillStyle = INK;
-        g.fillRect(860, y - 1.5, i % 5 === 0 ? 40 : 24, 3);
-        if (i % 5 === 0) text(g, `${i * 10}`, 920, y, { size: 22, color: '#2A1A12', font: 'ui' });
-      }
+      ruler(g);
     },
     update(_t, dt) {
       fx.update(dt);
@@ -129,38 +181,12 @@ export function proof(env: MiniEnv): MiniGame {
     },
     draw(g, t) {
       const d = cur();
-      // the bowl
-      ellipse(g, BX, BY + 10, 230, 40, '#5A3A22', 4);
       const h = d.state === 'collapsed' ? Math.max(0.08, d.h * (1 - Math.min(1, d.t * 3))) : d.h;
-      const top = BY - 30 - h * 380;
       // tremble just before the peak
       const near = d.state === 'rise' ? d.peak - d.h : 1;
       const shake = near < warn ? (1 - near / warn) * 7 : 0;
       const sx = shake ? Math.sin(t * 70) * shake : 0;
-      // dough dome rising out of the bowl
-      g.beginPath();
-      g.moveTo(BX - 200, BY);
-      g.bezierCurveTo(BX - 205 + sx, top + 40, BX - 120 + sx, top, BX + sx, top);
-      g.bezierCurveTo(BX + 120 + sx, top, BX + 205 + sx, top + 40, BX + 200, BY);
-      g.closePath();
-      const baked = d.state === 'baked';
-      fillInk(g, baked ? '#D98A3A' : d.state === 'collapsed' ? '#D8C08A' : '#F3D9A4', 4);
-      g.fillStyle = 'rgba(255,255,255,0.32)';
-      g.beginPath();
-      g.ellipse(BX - 70 + sx, top + 50, 50, 18, -0.3, 0, Math.PI * 2);
-      g.fill();
-      // bowl front
-      g.beginPath();
-      g.moveTo(BX - 240, BY - 10);
-      g.quadraticCurveTo(BX, BY + 220, BX + 240, BY - 10);
-      g.closePath();
-      fillInk(g, '#C8553D', 4);
-      g.strokeStyle = '#E98A74';
-      g.lineWidth = 4;
-      g.beginPath();
-      g.moveTo(BX - 180, BY + 30);
-      g.quadraticCurveTo(BX - 60, BY + 110, BX + 40, BY + 112);
-      g.stroke();
+      const top = bowl(g, h, d.state === 'baked' ? '#D98A3A' : d.state === 'collapsed' ? '#D8C08A' : '#F3D9A4', sx);
       // Baker's Nose: a shimmer from a little further out
       if (nose && d.state === 'rise' && near < 0.13) {
         const k = 1 - near / 0.13;
@@ -171,15 +197,7 @@ export function proof(env: MiniEnv): MiniGame {
         }
         g.globalAlpha = 1;
       }
-      // the rise marker on the ruler
-      const my = 560 - Math.min(1.1, h) * 400;
-      g.beginPath();
-      g.moveTo(850, my);
-      g.lineTo(826, my - 14);
-      g.lineTo(826, my + 14);
-      g.closePath();
-      fillInk(g, '#F2A541', 3);
-      text(g, `${Math.round(h * 100)}%`, 790, my, { size: 30, stroke: 6 });
+      riseMark(g, h);
       fx.draw(g);
       fl.draw(g);
       // the line of finished doughs
@@ -196,9 +214,10 @@ export function proof(env: MiniEnv): MiniGame {
           g.stroke();
         } else ellipse(g, cx, 708, 30, 9, '#D8C08A', 3);
       });
-      if (d.state === 'wait') text(g, 'Hold', BX, BY - 120, { size: 44, stroke: 7, color: '#FFF4E0' });
+      // where to hold, and (for the first doughs) what letting go does
+      if (d.state === 'wait' && pause <= 0) cue(g, BX, BY - 70, 'hold', loop(t, 1.6), { label: 'HOLD' });
+      else if (d.state === 'rise' && doughs.length <= 2) pill(g, 'LET GO TO BAKE', BX, Math.max(150, top - 50), 24);
       if (combo >= 3) text(g, `${combo} in a row`, BX, 120, { size: 26, color: '#FFD166', stroke: 6, font: 'ui' });
-      circle(g, -100, -100, 1, '#000', 0);
     },
     down() {
       holding = true;

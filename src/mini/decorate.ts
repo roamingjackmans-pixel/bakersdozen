@@ -1,13 +1,110 @@
 // Decorate: trace the dotted line with the piping bag. Coverage and how close you stay both count; icing off the
 // line costs. Steady Hands widens the margin; Florentine's clean lines score extra (in the rules).
+// The line shows its way round with little arrows, the start dot pulses, and the glove drags from it until you start
+// (and again from where you left off, if you stop for a while).
 import { audio } from '../audio/audio';
 import type { GameResult } from '../game/types';
-import { Floaters, INK, Particles, circle, ellipse, fillInk, rr, seeded, text, woodBackground, type Live, type MiniEnv, type MiniGame } from './common';
+import { Floaters, INK, Particles, circle, cue, ellipse, fillInk, loop, rr, seeded, text, woodBackground, type Live, type MiniEnv, type MiniGame } from './common';
 
 type Pt = [number, number];
 
-const CX = 600;
-const CY = 410;
+export const CX = 600;
+export const CY = 410;
+
+/**
+ * The guide over a cake: dots for the line still to ice, little arrows showing which way it runs, a pulsing green
+ * start dot and a red end ring. `at(i)` gives point i (with Salt Shaker's drift); `covered` marks iced points.
+ */
+export function guide(g: CanvasRenderingContext2D, n: number, at: (i: number) => [number, number], covered: ArrayLike<number> | null, t: number, margin: number): void {
+  // dots, with a gap where an arrow goes (an arrow every 15 points, ~90 px, showing which way the line runs)
+  const ARROW = 15;
+  const arrowAt = (i: number): boolean => i >= ARROW && i < n - 6 && i % ARROW === 0;
+  g.fillStyle = 'rgba(42,26,18,0.7)';
+  for (let i = 0; i < n; i += 3) {
+    if (covered?.[i]) continue;
+    const m = i % ARROW;
+    if (i >= ARROW - 3 && i < n - 3 && (m <= 3 || m >= ARROW - 3)) continue;
+    const [x, y] = at(i);
+    g.beginPath();
+    g.arc(x, y, 4.5, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.fillStyle = 'rgba(42,26,18,0.8)';
+  for (let i = ARROW; i < n - 6; i += ARROW) {
+    if (!arrowAt(i) || covered?.[i]) continue;
+    const [ax, ay] = at(i - 2);
+    const [bx, by] = at(i + 2);
+    const len = Math.hypot(bx - ax, by - ay) || 1;
+    const ux = (bx - ax) / len;
+    const uy = (by - ay) / len;
+    const [x, y] = at(i);
+    g.beginPath();
+    g.moveTo(x + ux * 10, y + uy * 10);
+    g.lineTo(x - ux * 7 - uy * 8, y - uy * 7 + ux * 8);
+    g.lineTo(x - ux * 3, y - uy * 3);
+    g.lineTo(x - ux * 7 + uy * 8, y - uy * 7 - ux * 8);
+    g.closePath();
+    g.fill();
+  }
+  const [x0, y0] = at(0);
+  if (!covered?.[0]) {
+    const k = (t * 1.4) % 1;
+    g.globalAlpha = 0.6 * (1 - k);
+    g.strokeStyle = '#5E9A58';
+    g.lineWidth = 5;
+    g.beginPath();
+    g.arc(x0, y0, 18 + k * 22, 0, Math.PI * 2);
+    g.stroke();
+    g.globalAlpha = 1;
+  }
+  circle(g, x0, y0, 16, '#5E9A58', 3);
+  const [x1, y1] = at(n - 1);
+  g.lineWidth = 4;
+  g.strokeStyle = '#A8322D';
+  g.beginPath();
+  g.arc(x1, y1, 16, 0, Math.PI * 2);
+  g.stroke();
+  // the margin you have, faintly, around the start
+  g.globalAlpha = 0.18;
+  circle(g, x0, y0, margin, '#FFFFFF', 0);
+  g.globalAlpha = 1;
+}
+
+/** the cake, cookie or tart the line is on, centred on (0, 0) */
+export function cakeBase(g: CanvasRenderingContext2D, kind: 'cake' | 'cookie' | 'tart'): void {
+  if (kind === 'cake') {
+    ellipse(g, 0, 30, 270, 250, '#C2649A', 5);
+    ellipse(g, 0, 0, 260, 238, '#F7D9E8', 5);
+  } else if (kind === 'cookie') {
+    ellipse(g, 0, 0, 262, 250, '#D9A46A', 5);
+    g.fillStyle = 'rgba(140,80,30,0.25)';
+    for (let i = 0; i < 18; i++) {
+      const a = i * 2.4;
+      g.beginPath();
+      g.arc(Math.cos(a) * (60 + (i % 5) * 36), Math.sin(a) * (60 + (i % 4) * 40), 6, 0, Math.PI * 2);
+      g.fill();
+    }
+  } else {
+    ellipse(g, 0, 0, 266, 252, '#B8692A', 5);
+    ellipse(g, 0, 0, 236, 222, '#F3E3C3', 4);
+  }
+}
+
+/** the piping bag, its nozzle at (x, y) */
+export function pipingBag(g: CanvasRenderingContext2D, x: number, y: number): void {
+  g.save();
+  g.translate(x, y);
+  g.rotate(-0.6);
+  g.beginPath();
+  g.moveTo(0, 0);
+  g.lineTo(-24, -70);
+  g.quadraticCurveTo(0, -96, 24, -70);
+  g.closePath();
+  fillInk(g, '#FFFDF8', 3);
+  rr(g, -6, -8, 12, 12, 3);
+  fillInk(g, '#9AA1AD', 2);
+  g.restore();
+}
 
 function heart(): Pt[] {
   const p: Pt[] = [];
@@ -141,6 +238,7 @@ export function decorate(env: MiniEnv): MiniGame {
   let combo = 0;
   let wob = 0;
   let pipeTick = 0;
+  let idleT = 0;
   const fx = new Particles();
   const fl = new Floaters();
   const icing = ['#FFF8EA', '#F0A8CF', '#A9C2E6', '#FFD166'];
@@ -223,6 +321,7 @@ export function decorate(env: MiniEnv): MiniGame {
       fx.update(dt);
       fl.update(dt);
       for (const p of pats) p.slide = Math.max(0, p.slide - dt * 3.2);
+      idleT = pressed ? 0 : idleT + dt;
       if (pressed && Math.hypot(px - lastInkX, py - lastInkY) >= 3) {
         lastInkX = px;
         lastInkY = py;
@@ -231,47 +330,11 @@ export function decorate(env: MiniEnv): MiniGame {
     },
     draw(g, t) {
       const p = cur();
-      const sx = p.slide * 900;
+      const sx = p.slide * 1200;
       g.save();
       g.translate(CX + sx, CY);
-      // the cake
-      if (p.kind === 'cake') {
-        ellipse(g, 0, 30, 270, 250, '#C2649A', 5);
-        ellipse(g, 0, 0, 260, 238, '#F7D9E8', 5);
-      } else if (p.kind === 'cookie') {
-        ellipse(g, 0, 0, 262, 250, '#D9A46A', 5);
-        g.fillStyle = 'rgba(140,80,30,0.25)';
-        for (let i = 0; i < 18; i++) {
-          const a = i * 2.4;
-          g.beginPath();
-          g.arc(Math.cos(a) * (60 + (i % 5) * 36), Math.sin(a) * (60 + (i % 4) * 40), 6, 0, Math.PI * 2);
-          g.fill();
-        }
-      } else {
-        ellipse(g, 0, 0, 266, 252, '#B8692A', 5);
-        ellipse(g, 0, 0, 236, 222, '#F3E3C3', 4);
-      }
-      // the guide: dotted, with a start dot and an end ring
-      g.fillStyle = 'rgba(42,26,18,0.55)';
-      for (let i = 0; i < p.pts.length; i += 3) {
-        if (p.covered[i]) continue;
-        const [x, y] = offset(i, t);
-        g.beginPath();
-        g.arc(x, y, 4, 0, Math.PI * 2);
-        g.fill();
-      }
-      const [x0, y0] = offset(0, t);
-      circle(g, x0, y0, 14, '#5E9A58', 3);
-      const [x1, y1] = offset(p.pts.length - 1, t);
-      g.lineWidth = 4;
-      g.strokeStyle = '#A8322D';
-      g.beginPath();
-      g.arc(x1, y1, 16, 0, Math.PI * 2);
-      g.stroke();
-      // the margin you have, faintly, around the start
-      g.globalAlpha = 0.18;
-      circle(g, x0, y0, margin, '#FFFFFF', 0);
-      g.globalAlpha = 1;
+      cakeBase(g, p.kind);
+      guide(g, p.pts.length, (i) => offset(i, t), p.covered, t, margin);
       // icing
       g.lineCap = 'round';
       g.lineJoin = 'round';
@@ -297,21 +360,20 @@ export function decorate(env: MiniEnv): MiniGame {
         ellipse(g, cx, cy, 36, 32, x.kind === 'cake' ? '#F7D9E8' : x.kind === 'cookie' ? '#D9A46A' : '#F3E3C3', 3);
         text(g, `${Math.round(x.score * 100)}`, cx, cy, { size: 24, color: '#2A1A12', font: 'ui' });
       });
-      // the piping bag
-      const bx = px;
-      const by = py;
-      g.save();
-      g.translate(bx, by);
-      g.rotate(-0.6);
-      g.beginPath();
-      g.moveTo(0, 0);
-      g.lineTo(-24, -70);
-      g.quadraticCurveTo(0, -96, 24, -70);
-      g.closePath();
-      fillInk(g, '#FFFDF8', 3);
-      rr(g, -6, -8, 12, 12, 3);
-      fillInk(g, '#9AA1AD', 2);
-      g.restore();
+      pipingBag(g, px, py);
+      // the glove: drag from the start dot until you've begun, and from where you stopped after a long pause
+      if (!pressed && p.slide < 0.05 && !p.done) {
+        const cov = p.covered.reduce((a, v) => a + v, 0) / p.pts.length;
+        if (cov < 0.05 || idleT > 3) {
+          let i0 = 0;
+          if (cov >= 0.05) while (i0 < p.pts.length - 1 && p.covered[i0]) i0++;
+          const i1 = Math.min(p.pts.length - 1, i0 + 14);
+          const [ax, ay] = offset(i0, t);
+          const [bx, by] = offset(i1, t);
+          const len = Math.hypot(bx - ax, by - ay) || 1;
+          cue(g, CX + ax, CY + ay, 'drag', loop(t, 1.5), { dx: ((bx - ax) / len) * 100, dy: ((by - ay) / len) * 100, label: 'DRAG' });
+        }
+      }
       fx.draw(g);
       fl.draw(g);
       if (combo >= 2) text(g, `${combo} clean`, CX, 760, { size: 26, color: '#FFD166', stroke: 6, font: 'ui' });

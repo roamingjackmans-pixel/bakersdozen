@@ -12,6 +12,7 @@ import { hash } from '../game/rng';
 import { bakeryOf, canClaim, currentGame, isLastPlace, order, priceFor, seatOpen, seatWon } from '../game/rules';
 import { save, saveNow, session } from '../game/session';
 import type { BuffId, GameId, LiveProgress, MatchState, MiniId } from '../game/types';
+import { demoCanvas } from '../mini/demos';
 import { runMini } from '../mini/runner';
 import type { Net } from '../net/socket';
 import { api } from '../net/api';
@@ -797,7 +798,7 @@ function renderPhase(st: MatchState): void {
     if (!changed) return;
     audio.music('bakery');
     ov.className = 'overlay dim';
-    ov.replaceChildren(st.part > 0 ? nextGameBanner(st) : bigOrder(st));
+    ov.replaceChildren(st.part > 0 ? nextGameBanner(st) : h('div.row', { style: 'gap:30px;align-items:center' }, bigOrder(st), howTo(order(st).games)));
     audio.sfx(st.part > 0 ? 'swap' : 'bell');
     return;
   }
@@ -913,9 +914,19 @@ function bigOrder(st: MatchState): HTMLElement {
   );
 }
 
+/** how to play the order's mini games: each one's looping demo (the glove showing where and when) */
+function howTo(games: GameId[]): HTMLElement {
+  const w = games.length > 1 ? 380 : 440;
+  return h(
+    'div.howto',
+    h('div.howto-head', 'How to play'),
+    ...games.map((g) => h('div.col', { style: 'gap:6px' }, demoCanvas(g, w), h('div.howto-cap', h('b', { style: `color:${GAMES[g].color}` }, GAMES[g].name), ' ', GAMES[g].how))),
+  );
+}
+
 function nextGameBanner(st: MatchState): HTMLElement {
   const g = currentGame(st);
-  return h('div.col.pop', { style: 'align-items:center;gap:16px' }, h('span.tag', { style: 'font-size:18px' }, 'Then'), gameChip(g, true), timerBar('#F2A541', false));
+  return h('div.col.pop', { style: 'align-items:center;gap:16px' }, h('span.tag', { style: 'font-size:18px' }, 'Then'), gameChip(g, true), howTo([g]), timerBar('#F2A541', false));
 }
 
 function thirteenthAsk(st: MatchState, mine: number): HTMLElement {

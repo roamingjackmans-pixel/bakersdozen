@@ -5,7 +5,9 @@ import { audio } from '../audio/audio';
 import { BAKER, GAMES, skillMult } from '../game/data';
 import type { BuffId, GameId, GameResult, ModId, TwistId } from '../game/types';
 import { onScale, stageScale } from '../ui/stage';
-import { H, INK, W, rr, fillInk, sparkle, text, type Live, type MiniEnv, type MiniGame } from './common';
+import { COUNTDOWN_S as COUNT_S } from '../game/flow';
+import { DISPLAY, H, INK, UI, W, cueGate, rr, fillInk, sparkle, text, type Live, type MiniEnv, type MiniGame } from './common';
+import { DEMOS } from './demos';
 import { decorate } from './decorate';
 import { knead } from './knead';
 import { oven, type OvenLink } from './oven';
@@ -285,7 +287,9 @@ export function runMini(host: HTMLElement, o: RunOpts): { stop(): void; game(): 
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.drawImage(bg, 0, 0);
     g.setTransform(k, 0, 0, k, 0, 0);
+    cueGate.on = t >= 0;
     cur().draw(g, Math.max(0, t));
+    cueGate.on = true;
     // modifiers over the game
     if (storm) {
       const cs = cloud();
@@ -383,9 +387,10 @@ export function runMini(host: HTMLElement, o: RunOpts): { stop(): void; game(): 
         audio.sfx('tick');
       }
     }
-    // 3, 2, 1
+    // 3, 2, 1: the game dimmed, how to play it shown on top (the glove on the very spot), the name and the count
+    // in a bar along the top
     if (t < 0) {
-      gc.fillStyle = 'rgba(20,12,8,0.55)';
+      gc.fillStyle = 'rgba(20,12,8,0.6)';
       gc.fillRect(0, 0, W, H);
       const n = Math.ceil(-t);
       if (n !== lastCount && n <= 3) {
@@ -393,15 +398,26 @@ export function runMini(host: HTMLElement, o: RunOpts): { stop(): void; game(): 
         audio.sfx('count');
       }
       const def = GAMES[o.game];
-      text(gc, def.name, W / 2, 250, { size: 84, stroke: 10, color: def.color });
-      text(gc, def.how, W / 2, 340, { size: 36, font: 'ui', stroke: 7 });
-      text(gc, def.input, W / 2, 395, { size: 24, font: 'ui', color: '#F3E6CF', stroke: 5 });
-      if (o.salted) text(gc, 'Salted', W / 2, 460, { size: 34, color: '#FFFDF8', stroke: 7 });
-      const sc = 1 + ((-t) % 1) * 0.4;
+      DEMOS[o.game].draw(gc, Math.max(0, COUNT_S + t));
+      rr(gc, 170, 84, 860, 66, 33);
+      fillInk(gc, 'rgba(30,18,12,0.92)', 3);
+      gc.font = `900 36px ${DISPLAY}`;
+      const nw = gc.measureText(def.name).width;
+      text(gc, def.name, 210, 118, { size: 36, color: def.color, align: 'left' });
+      // the rule shrinks to fit before the count
+      gc.font = `900 24px ${UI}`;
+      const hx = 210 + nw + 22;
+      const hw = gc.measureText(def.how).width;
+      text(gc, def.how, hx, 119, { size: hw > 930 - hx ? Math.floor((24 * (930 - hx)) / hw) : 24, font: 'ui', align: 'left', color: '#FFF4E0' });
+      if (o.salted) text(gc, 'Salted', 600, 178, { size: 28, color: '#FFFDF8', stroke: 6 });
+      const sc = 1 + ((-t) % 1) * 0.25;
       gc.save();
-      gc.translate(W / 2, 590);
+      gc.translate(1000, 117);
       gc.scale(sc, sc);
-      text(gc, `${Math.max(1, n)}`, 0, 0, { size: 140, stroke: 12, color: '#FFD166' });
+      gc.beginPath();
+      gc.arc(0, 0, 46, 0, Math.PI * 2);
+      fillInk(gc, '#FFD166', 4);
+      text(gc, `${Math.max(1, n)}`, 0, 3, { size: 60, color: INK });
       gc.restore();
     } else if (t < 0.6) {
       if (lastCount !== 0) {

@@ -61,6 +61,8 @@ export interface OvenState {
   reserved: number[];
   /** per seat: its bakery */
   seatBakery: number[];
+  /** per slot: host time it last emptied (so an AI can leave a just-freed slot to a waiting player) */
+  freeAt?: number[];
   rng: number;
 }
 
@@ -141,6 +143,7 @@ export function newOven(st: MatchState, now: number, seconds: number): OvenState
     round: st.round,
     slots: reserved.length,
     reserved,
+    freeAt: reserved.map(() => 0),
     seatBakery: st.seats.map((_, i) => bakeryOf(st, i)),
     trays,
     start: now,
@@ -219,6 +222,7 @@ export function pull(ov: OvenState, st: MatchState, seat: number, trayId: number
   t.by = seat;
   t.at = at;
   t.parry = Math.abs(at - (t.start + t.dur)) <= PARRY_MS;
+  emptied(ov, t.slot, now);
   t.slot = -1;
   ov.loaves[bakeryOf(st, t.owner)]! += t.value;
   ev(ov, 'pull', seat, t.id, t.grade);
@@ -248,6 +252,7 @@ export function stepOven(ov: OvenState, st: MatchState, now: number): boolean {
     if (zoneAt(t, now - PULL_GRACE_MS) === 'burnt') {
       t.st = 'out';
       t.grade = 'burnt';
+      emptied(ov, t.slot, now);
       t.slot = -1;
       t.at = now;
       ov.loaves[bakeryOf(st, t.owner)]! -= 1;
@@ -325,6 +330,27 @@ export interface OvenAiMind {
 }
 
 const LEVEL_REACT = { 1: 1300, 2: 850, 3: 520 } as const;
+/** how long an AI leaves a free slot to a player who is waiting with fewer trays in */
+const HUMAN_GRACE_MS = 2500;
+
+/** trays this seat has had in the oven so far (baking or out) */
+function traysIn(ov: OvenState, seat: number): number {
+  let n = 0;
+  for (const t of ov.trays) if (t.owner === seat && (t.st === 'baking' || t.st === 'out')) n++;
+  return n;
+}
+
+/** when this slot last emptied (0: not yet used) */
+function freeSince(ov: OvenState, slot: number): number {
+  return ov.freeAt?.[slot] ?? 0;
+}
+
+/** a tray has just left this slot */
+function emptied(ov: OvenState, slot: number, now: number): void {
+  if (slot < 0) return;
+  ov.freeAt ??= [];
+  ov.freeAt[slot] = now;
+}
 const LEVEL_SD = { 1: 0.95, 2: 0.6, 3: 0.38 } as const;
 
 /** AI seats load, pull, rescue and bump like people do (with reaction time and timing error) */
@@ -374,11 +400,17 @@ export function aiOven(ov: OvenState, st: MatchState, minds: Map<number, OvenAiM
         }
       }
     }
-    // load the next tray into a free slot
-    if (now >= m.readyAt && nextTray(ov, seat) && freeSlot(ov, -1, seat) >= 0) {
-      if (load(ov, seat, -1, now)) {
-        changed = true;
-        m.readyAt = now + LEVEL_REACT[lvl] * r.range(0.7, 1.4);
+    // load the next tray into a free slot, but not ahead of a player who is waiting with fewer trays in: a
+    // person needs a moment to reach a slot an AI has just freed (a slot left empty for a while is anyone's)
+    if (now >= m.readyAt && nextTray(ov, seat)) {
+      const slot = freeSlot(ov, -1, seat);
+      if (slot >= 0) {
+        const mine = traysIn(ov, seat);
+        const waiting = st.seats.some((p, o) => o !== seat && !p.ai && !p.standIn && seatOpen(st, o) && nextTray(ov, o) && traysIn(ov, o) < mine && slotFor(ov, slot, o));
+        if ((!waiting || now - freeSince(ov, slot) > HUMAN_GRACE_MS) && load(ov, seat, slot, now)) {
+          changed = true;
+          m.readyAt = now + LEVEL_REACT[lvl] * r.range(0.7, 1.4);
+        }
       }
     }
   }

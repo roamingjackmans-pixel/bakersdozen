@@ -15,9 +15,11 @@ comes in for his pretzels, and there is a hearth somewhere in the back of the ba
   everyone plays the same mini game at once (rivals' progress in the corner), the tally fills the shared tray, one
   baker may bake the 13th loaf, and the peddler's cart sells buffs for Tips. The window is the clock: midnight to
   sunrise, the Inspector's lantern walking up the road.
-- **Six mini games:** Knead (tap on the beat), Proof (hold to rise, let go before it collapses), Shared Oven (load,
+- **Six mini games:** Knead (tap as each ring hits the dough), Proof (hold to rise, let go before it collapses), Shared Oven (load,
   pull golden trays, rescue a rival's or let it burn), Decorate (trace the line), Scale (pour to the gram), Rush Order
-  (remember the recipe). The last order, Dawn, runs every station at once in the Shared Oven.
+  (remember the recipe). The last order, Dawn, runs every station at once in the Shared Oven. Every game shows where
+  and when to act without sound: a looping demo beside the order card and in the 3-2-1, and a glove on the spot while
+  you play.
 - **The 13th loaf:** after the count, anyone with Saffron can bake it (+5 ★); it covers an order one short. Never bake
   one and you lose half your ★ at dawn. Three short orders crack three seals and the bakery closes.
 - **Six bakers**, each with one perk and one weakness: Stephanie (sees the next order), Joe (parry: a perfectly timed
