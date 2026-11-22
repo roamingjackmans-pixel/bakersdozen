@@ -6,7 +6,7 @@ import { mainMenu, show } from '../app';
 import { audio } from '../audio/audio';
 import { BAKER, BUFFS, CUSTOMER, EMOTES, GAMES, ITEMS, MINI_IDS, MODS, STYLES, TWISTS, ACHIEVEMENTS, COSMETIC, BAL } from '../game/data';
 import { COUNTDOWN_S } from '../game/flow';
-import { ClientMatch, HostMatch, localPair, type GuestMsg, type HostMsg } from '../game/match';
+import { ClientMatch, HostMatch, localPair, soloPlayerId, type GuestMsg, type HostMsg } from '../game/match';
 import { recordNight, dailyScore, type NightExtras, type Unlocks } from '../game/profile';
 import { hash } from '../game/rng';
 import { bakeryOf, canClaim, currentGame, isLastPlace, order, priceFor, seatOpen, seatWon } from '../game/rules';
@@ -64,7 +64,8 @@ export function stopNight(): void {
 export function startSolo(st: MatchState, lobby: LState | null, resumed: boolean): void {
   stopNight();
   const host = new HostMatch(st, null, 'solo');
-  const client = localPair(host, 'local');
+  // your seat: your account's when signed in, 'local' offline
+  const client = localPair(host, soloPlayerId(st.seats, session.online ? (session.user?.id ?? null) : null));
   C = mkCtx(client, host, null, lobby, 'solo');
   host.start();
   enter();

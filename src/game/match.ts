@@ -411,6 +411,16 @@ export class ClientMatch {
   }
 }
 
+/**
+ * Whose seat a solo night is played from: the signed-in account's seat (the lobby seats a signed-in player under their
+ * account id), else the offline player ('local'), else the night's only person. Without this a signed-in player's solo
+ * night ran with nobody at their seat: no mini game opened and the bakery waited on them.
+ */
+export function soloPlayerId(seats: { id: string; ai: boolean }[], accountId: string | null): string {
+  const people = seats.filter((s) => !s.ai);
+  return (people.find((s) => s.id === accountId) ?? people.find((s) => s.id === 'local') ?? people[0])?.id ?? 'local';
+}
+
 /** solo (or the host's own screen): the client talks straight to the host in this tab */
 export function localPair(host: HostMatch, userId: string): ClientMatch {
   const c = new ClientMatch(userId, (m) => queueMicrotask(() => host.handle(userId, m)), true);
