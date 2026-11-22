@@ -1,5 +1,6 @@
 // Rush Order: the customer calls out a recipe; remember it, then rebuild it from the pantry in order.
-// Recipes grow by one each time you get one right. Sharp Memory and Nonna Bea keep the recipe up 2 s longer.
+// Recipes grow by one each time you get one right; getting the goal length right (6 in a 50 s game) ends the game.
+// Sharp Memory and Nonna Bea keep the recipe up 2 s longer.
 // A Salt Shaker shuffles your pantry shelves after you have looked.
 // Labels say which part you're in (Remember, then Tap in order) and the next spot to fill glows.
 import { audio } from '../audio/audio';
@@ -89,6 +90,10 @@ export function rush(env: MiniEnv): MiniGame {
   const fl = new Floaters();
 
   const cur = (): Recipe => recipes[recipes.length - 1]!;
+  // the objective: get a recipe this long right (6 in a 50 s game). Longer recipes score more up to here, so once
+  // it's done nothing could raise the score and the game ends
+  const goalLen = Math.max(4, Math.min(7, Math.floor((6 * env.seconds) / 50)));
+  const best = (): number => recipes.reduce((m, x) => (x.ok ? Math.max(m, x.items.length) : m), 0);
 
   const slotAt = (x: number, y: number): number => {
     for (let i = 0; i < 8; i++) {
@@ -144,7 +149,7 @@ export function rush(env: MiniEnv): MiniGame {
       r.t += dt;
       if (pause > 0) {
         pause -= dt;
-        if (pause <= 0) {
+        if (pause <= 0 && best() < goalLen) {
           make();
           if (env.salted) layout = [...layout].sort(() => rnd() - 0.5);
         }
@@ -215,6 +220,8 @@ export function rush(env: MiniEnv): MiniGame {
       const m = /^(?:Digit|Numpad)([1-8])$/.exec(code);
       if (m) pick(Number(m[1]) - 1);
     },
+    finished: () => best() >= goalLen && pause <= 0,
+    goal: () => [best(), goalLen],
     peek: () => ({ recipe: cur(), layout, pause, slot: (i: number) => [GRID_X + (i % 4) * (SLOT_W + 24) + 20, GRID_Y + Math.floor(i / 4) * (SLOT_H + 20) + 20] }),
     live(): Live {
       const all = recipes.filter((x) => x.phase === 'done');
@@ -228,8 +235,8 @@ export function rush(env: MiniEnv): MiniGame {
       const got = all.reduce((s, x) => s + (x.ok ? x.items.length : x.got), 0);
       const tot = all.reduce((s, x) => s + (x.phase === 'build' ? x.got : x.items.length), 0);
       const q = tot ? got / tot : 0;
-      // longer recipes are worth more: reaching 6+ is a great shift
-      const reach = Math.min(1, (len - 2) / 5);
+      // longer recipes are worth more, up to the objective (getting a 6 right in a 50 s game)
+      const reach = Math.min(1, (len - 2) / (goalLen - 1));
       return { q: Math.min(1, q * (0.7 + 0.3 * reach)), perfect: all.filter((x) => x.ok).length };
     },
   };

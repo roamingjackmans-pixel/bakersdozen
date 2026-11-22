@@ -10,9 +10,9 @@ this file needs fixing.
 
 | Phase | Length | What happens |
 | --- | --- | --- |
-| reveal | 8 s (10 s first order; 3 s between chained games) | the order card flips: customer, item, games, Rush, twist |
-| play | 3 s countdown + 50 s (orders 1–4), 58 s (5–12), 38 s each for a two-game chain, 50 s each on Long Night, 80 s Dawn; Rush ×0.75, Midnight Rush ×0.75 | everyone plays the same game at once; results go to the host; AI results are decided at the start and acted out in the corner |
-| tally | 4.5 s count · up to 6 s for the 13th loaf · 3.5 s verdict | loaves fill the tray; the Apprentice adds one; Saffron Shipments land; Best in Show; then the 13th-loaf call, then fill or fine |
+| reveal | 8 s (10 s first order; 3 s before a chained order's second game) | the order card flips: customer, item, games, Rush, twist |
+| play | 3 s countdown + 50 s (orders 1–4), 58 s (5–12), 38 s each for a two-game chain, 50 s each on Long Night, 80 s Dawn; Rush ×0.75, Midnight Rush ×0.75; the lobby's mini game length ×0.7 / ×1 / ×1.4 (35 / 50 / 70 s; not the Shared Oven or Dawn) | everyone plays the same game at once; results go to the host; AI results are decided at the start and acted out in the corner. Ends early once every person has met their game's objective, or (the oven) once every tray is out |
+| tally | 4.5 s count · up to 6 s for the 13th loaf · 3.5 s verdict | loaves fill the tray; the Apprentice adds one; Saffron Shipments land; Best in Show; then the 13th-loaf call, then fill or fine. Every game gets its own count: a chained order counts after its first game (the count only), then plays the second, then the full tally |
 | market | 20 s (ends early when every person is done) | the peddler's cart; skipped after a Market Closed twist and after the last order |
 | dawncheck | 7 s | the Inspector's verdict |
 | over | — | results, profile, achievements |
@@ -48,6 +48,8 @@ Skill (1–5, baseline 3) makes a game ~12% easier per point (wider windows, lon
 
 - After the count, anyone with Saffron may ask to bake the 13th loaf (6 s). One per bakery per order: whoever has
   baked the fewest gets it, then the one with fewer ★. It costs 1 Saffron and pays +5 ★; it covers an order one short.
+- **Bumper batch:** a tray that ends 3+ loaves over the order (not counting the 13th) pays everyone who bakes on it
+  +1 ★, +2 at 4 over, +3 at 5 or more (`bumperStars`, `BAL.bumperAt` / `bumperMax`).
 - A short order uses a Bribe if the bakery has one, else cracks a seal. Seals: 3 (2 with Strict Inspector, and on
   campaign nights 11–13).
 - At dawn: never baked a 13th loaf → half your ★ (not in co-op). Your bakery bought a team buff and you never chipped
@@ -69,7 +71,7 @@ buffs have one copy. Catch-up: last place in ★ pays 25% less; Pip pays 20% les
 | Steady Hands | 6 | Decorate margin ×1.35 |
 | Metronome | 5 | Knead timing windows ×1.25 and a louder beat |
 | Baker's Nose | 5 | Proof shimmer from 13% below the peak |
-| Calibrated Scale | 5 | a green zone around the target and a needle half as wobbly |
+| Calibrated Scale | 5 | a green zone around the target, exactly as wide as a good weigh (±4.9%), and a needle half as wobbly |
 | Extra Oven Slot | 12 (pooled) | +1 oven slot for the night |
 | Apprentice | 14 (pooled) | +1 tray loaf at each of the next 3 tallies |
 | Bribe the Inspector | 18 (pooled) | cancels the next fine |
@@ -83,19 +85,31 @@ everyone a free shaker and cloud each order and nobody is caught.
 
 ## The mini games (`src/mini/`)
 
-| Game | Input | q | Skill makes it easier by | Salted |
-| --- | --- | --- | --- | --- |
-| Knead | tap / Space as each ring meets the dough | (perfect + 0.6 good) ÷ (beats + 0.6 × stray taps) | wider windows (±50 / ±115 ms at skill 3) | some beats land off the grid |
-| Proof | hold to rise, release | mean of rise ÷ peak (collapse = 0) × pace | longer tremble before the peak | the rise stutters |
-| Shared Oven | tap slot to load, tap tray to pull | grades of your trays (perfect 1, golden 0.82, dark 0.45) | wider golden window, longer smoke | — |
-| Decorate | drag the piping bag | coverage × (1 − 1.4 off-line ink) × precision × pace | wider margin | the guide drifts |
-| Scale | hold to pour, Weigh | closeness to the target (±22%) × pace | steadier needle | a digit of the target smudges |
-| Rush Order | tap / 1-8 in order | items right ÷ items shown (longer recipes count more) | longer look | the shelves shuffle after the look |
+| Game | Input | q | Objective (ends the game) | Skill makes it easier by | Salted |
+| --- | --- | --- | --- | --- | --- |
+| Knead | tap / Space as each ring meets the dough | (perfect + 0.6 good) ÷ (beats + 0.6 × stray taps) | the song (it runs the whole clock) | wider windows (±50 / ±115 ms at skill 3) | some beats land off the grid |
+| Proof | hold to rise, release | mean of rise ÷ peak (collapse = 0) × pace | 1 dough per 9 s (≥ 3) | longer tremble before the peak | the rise stutters |
+| Shared Oven | tap slot to load, tap tray to pull | grades of your trays (perfect 1, golden 0.82, dark 0.45) | every tray out (closes 1 s later) | wider golden window, longer smoke | — |
+| Decorate | drag the piping bag | coverage × (1 − 1.4 off-line ink) × precision × pace | 1 design per 12 s (≥ 2); a design is done at 99% of its line | wider margin | the guide drifts |
+| Scale | hold to pour, Weigh | closeness to the target (±22%) × pace | 1 weigh per 8 s (≥ 3) | steadier needle | a digit of the target smudges |
+| Rush Order | tap / 1-8 in order | items right ÷ items shown (longer recipes count more, up to the goal) | a recipe of 6 right in a 50 s game (4–7, by the clock) | longer look | the shelves shuffle after the look |
+
+**Objectives** (`goalFor` in `src/mini/common.ts`; `finished()` / `goal()` on each game). The endless games' objective
+is the pace their score already asks for, so once it's met nothing more could raise the score: the game stops
+handing out targets, shows "Done", and sends its result. A counter by the clock shows it (3 / 6). The host moves on
+as soon as every person has sent theirs (`tickPlay` in `flow.ts`): solo, finishing early skips the rest of the clock;
+online, someone who finishes waits for the others. AI results are decided at the start, so an AI-only night (the
+balance sims) still runs the clock. Swap Shop: meeting the first game's objective swaps to the second game at once.
 
 The Shared Oven is the one real-time shared game: the host runs it (`src/game/oven.ts`); every screen draws the same
 trays from start times on the host clock. Pulls are judged at the moment the player tapped (converted to host time,
-up to 260 ms back). Perfect zone ±240 ms; Joe's parry ±70 ms. Burnt trays take a loaf off the owner's tray. Dawn adds
-a prep board (knead 3 taps before a tray can go in), 6 trays each, 2 extra slots and golden trays worth ×1.6.
+up to 260 ms back). Perfect zone ±240 ms; Joe's parry ±70 ms. Burnt trays take a loaf off the owner's tray (or what
+the tray was worth, if less). Dawn adds a prep board (knead 3 taps before a tray can go in), 6 trays each, 2 extra
+slots and golden trays worth ×1.6 of the others.
+**Oven loaves:** a baker's trays share their part of the order like any game's: all golden, they make
+`need ÷ bakers on the tray × 1.25 × 0.92` (`BAL.ovenYield`), halved when the oven is one game of a chain, with Dawn's
+golden trays weighted ×1.6 inside that share. Each tray holds its exact share (0.86 loaves at a four-baker table)
+and the tray rounds the total.
 AI rivals pull and reload in the same tick, so an AI leaves a slot it has just freed to a player who is waiting with
 fewer trays in, for up to 2.5 s (`aiOven`, `HUMAN_GRACE_MS`; `tests/oven.test.ts`). With no players waiting, AI play is
 unchanged.

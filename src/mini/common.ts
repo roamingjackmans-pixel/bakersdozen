@@ -42,12 +42,20 @@ export interface MiniGame {
   result(): GameResult;
   /** the background, drawn once into an offscreen canvas */
   background?(g: CanvasRenderingContext2D): void;
-  /** the game has nothing left to do (the runner ends it early) */
+  /** the objective is met: the runner ends the game early (and the night moves on once every person is done) */
   finished?(): boolean;
+  /** the objective as [done, goal], for the counter by the clock (games without a count leave it out) */
+  goal?(): [number, number];
   /** how far through its own content (for Swap Shop's handover) */
   stop?(): void;
   /** tests only: the game's hidden state, so a bot can play it */
   peek?(): Record<string, unknown>;
+}
+
+/** the objective of an endless game: this many bakes in `seconds` (one every `perBake` s, at least `min`). It is
+ * also the pace the score asks for, so a game that reaches it ends: nothing more could raise the score */
+export function goalFor(seconds: number, perBake: number, min: number): number {
+  return Math.max(min, Math.round(seconds / perBake));
 }
 
 // ------------------------------------------------------------------ drawing helpers

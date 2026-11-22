@@ -9,7 +9,7 @@ import { COUNTDOWN_S } from '../game/flow';
 import { ClientMatch, HostMatch, localPair, soloPlayerId, type GuestMsg, type HostMsg } from '../game/match';
 import { recordNight, dailyScore, type NightExtras, type Unlocks } from '../game/profile';
 import { hash } from '../game/rng';
-import { bakeryOf, canClaim, currentGame, isLastPlace, order, priceFor, seatOpen, seatWon } from '../game/rules';
+import { bakeryOf, bumperStars, canClaim, currentGame, isLastPlace, order, priceFor, seatOpen, seatWon } from '../game/rules';
 import { save, saveNow, session } from '../game/session';
 import type { BuffId, GameId, LiveProgress, MatchState, MiniId } from '../game/types';
 import { demoCanvas } from '../mini/demos';
@@ -619,6 +619,11 @@ function playEvents(st: MatchState): void {
         floatAt(e.seat ?? 0, 'Best in Show +3 ★');
         audio.sfx('star');
         break;
+      case 'bumper':
+        // a bumper batch: everyone who baked on that tray
+        for (const s of st.bakeries[e.v ?? 0]?.members ?? []) floatAt(s, `Bumper batch +${e.to} ★`, '#FFD166', 0.2);
+        if (e.v === myBakery(st)) audio.sfx('star');
+        break;
       case 'apprentice':
         if (e.v === myBakery(st)) audio.sfx('loaf');
         break;
@@ -674,7 +679,7 @@ function maybeRunGame(st: MatchState): void {
     const pool = MINI_IDS.filter((x) => x !== g && x !== 'oven');
     swapTo = pool[seed % pool.length];
   }
-  const trayBefore = st.bakeries.map((b) => b.tray);
+  const trayBefore = st.bakeries.map((b) => b.trayExact);
   const isDawn = g === 'dawn';
   audio.music(isDawn ? 'dawn' : 'game');
   c.runner = runMini(els!.root, {
@@ -818,7 +823,8 @@ function renderPhase(st: MatchState): void {
       ov.replaceChildren(h('div', { style: 'position:absolute;top:330px;left:50%;transform:translateX(-50%)' }, h('span.tag.pop', { style: 'font-size:20px;padding:6px 18px' }, 'Tally')));
       startTallyAnim(st);
       st.seats.forEach((_, i) => {
-        const l = st.players[i]!.last;
+        // this game's numbers: a chained order's second count doesn't float the first game's again
+        const l = st.players[i]!.lastGame ?? st.players[i]!.last;
         if (!l || !seatOpen(st, i)) return;
         floatAt(i, `+${l.stars} ★`, '#E8B84A', 0.1 * i);
         if (l.tips) floatAt(i, `+${l.tips} tips`, '#D9A441', 0.5 + 0.1 * i);
@@ -828,8 +834,17 @@ function renderPhase(st: MatchState): void {
     if (st.tallyStep === 1) {
       ov.className = 'overlay';
       const b = st.bakeries[myBakery(st)]!;
-      region('ask', `${st.round}:${b.tray}:${st.claims.join()}:${st.done.join()}:${st.players[mine]?.saffron}`, () => ov.replaceChildren(thirteenthAsk(st, mine)));
-    } else delete keys.ask;
+      // the popup is built (and pops in) once per order; everyone's choices only update what's inside it
+      region('askBox', `${st.round}`, () => {
+        askBox = h('div.thirteenth-ask.parchment.pop');
+        askTimer = h('div', { style: 'width:160px' }, timerBar());
+        ov.replaceChildren(h('div', { style: 'position:absolute;left:50%;top:345px;transform:translateX(-50%);width:880px' }, askBox));
+      });
+      region('ask', `${st.round}:${b.tray}:${st.claims.join()}:${st.done.join()}:${st.players[mine]?.saffron}`, () => askBox?.replaceChildren(...thirteenthAsk(st, mine), askTimer!));
+    } else {
+      delete keys.ask;
+      delete keys.askBox;
+    }
     if (st.tallyStep === 2 && changed) {
       tallyShown = -1;
       renderCounter(st);
@@ -869,8 +884,8 @@ function renderPhase(st: MatchState): void {
 function startTallyAnim(st: MatchState): void {
   clearInterval(tallyAnim);
   const b = st.bakeries[myBakery(st)]!;
-  const start = b.tray - b.trayBy.reduce((s, n) => s + n, 0);
-  tallyShown = Math.max(0, start);
+  // from the whole loaves already counted this order (a chained order's first game), so the count runs in whole loaves
+  tallyShown = Math.max(0, Math.round(b.counted ?? 0));
   const total = b.tray;
   if (total <= tallyShown) {
     tallyShown = -1;
@@ -930,7 +945,11 @@ function nextGameBanner(st: MatchState): HTMLElement {
   return h('div.col.pop', { style: 'align-items:center;gap:16px' }, h('span.tag', { style: 'font-size:18px' }, 'Then'), gameChip(g, true), howTo([g]), timerBar('#F2A541', false));
 }
 
-function thirteenthAsk(st: MatchState, mine: number): HTMLElement {
+let askBox: HTMLElement | null = null;
+let askTimer: HTMLElement | null = null;
+
+/** what's inside the 13th-loaf popup: the tray count and the choice (the box and its timer are built once) */
+function thirteenthAsk(st: MatchState, mine: number): HTMLElement[] {
   const bi = myBakery(st);
   const b = st.bakeries[bi]!;
   const o = order(st);
@@ -938,13 +957,10 @@ function thirteenthAsk(st: MatchState, mine: number): HTMLElement {
   const can = mine >= 0 && canClaim(st, mine);
   const want = st.claims.includes(mine);
   const decided = st.done.includes(mine);
-  const msg = o.twist === 'nothirteenth' ? 'No 13th loaf' : short <= 0 ? 'Full · bonus ★' : short === 1 ? '1 short · the 13th saves it' : `${short} short`;
+  const bumper = bumperStars(-short);
+  const msg = o.twist === 'nothirteenth' ? 'No 13th loaf' : bumper ? `${-short} spare · bumper batch +${bumper} ★` : short <= 0 ? 'Full · bonus ★' : short === 1 ? '1 short · the 13th saves it' : `${short} short`;
   const claimants = st.claims.filter((s) => bakeryOf(st, s) === bi);
-  return h(
-    'div',
-    { style: 'position:absolute;left:50%;top:345px;transform:translateX(-50%);width:880px' },
-    h(
-      'div.thirteenth-ask.parchment.pop',
+  return [
       h('div', { style: 'text-align:center;min-width:150px' }, h('div.display', { style: `font-size:48px;color:${short <= 0 ? '#5E9A58' : short === 1 ? '#C47A1E' : '#A8322D'}` }, `${b.tray} / ${o.need}`), h('div', { style: 'font-weight:900;color:#6B4A33' }, 'on the tray')),
       h(
         'div.col',
@@ -979,15 +995,16 @@ function thirteenthAsk(st: MatchState, mine: number): HTMLElement {
         ),
         h('div.row', { style: 'gap:8px;min-height:40px' }, claimants.length ? h('span', { style: 'font-weight:800;color:#6B4A33' }, 'Wants it:') : h('span', { style: 'font-weight:800;color:#6B4A33' }, can ? 'Fewest 13th loaves first' : st.players[mine]?.saffron ? '' : 'No Saffron'), ...claimants.map((s) => svg(portrait(st.seats[s]!.baker, 40, st.seats[s]!.cosmetics)))),
       ),
-      h('div', { style: 'width:160px' }, timerBar()),
-    ),
-  );
+  ];
 }
 
 function verdictStamp(st: MatchState): HTMLElement {
   const bi = myBakery(st);
   const b = st.bakeries[bi]!;
-  const evs = st.events.filter((e) => e.v === bi && ['filled', 'fine', 'bribed', 'closed'].includes(e.k));
+  const all = st.events.filter((e) => e.v === bi && ['filled', 'fine', 'bribed', 'closed', 'bumper'].includes(e.k));
+  // a bumper batch is pushed right after this order's "filled", so it's this order's only if it's the latest
+  const bumper = all[all.length - 1]?.k === 'bumper' ? (all[all.length - 1]!.to ?? 0) : 0;
+  const evs = all.filter((e) => e.k !== 'bumper');
   const last = evs[evs.length - 1]?.k ?? 'filled';
   const map: Record<string, [string, string]> = { filled: ['Filled', '#5E9A58'], fine: ['Fined', '#A8322D'], bribed: ['Bribed', '#E8B84A'], closed: ['Closed', '#A8322D'] };
   const [label, color] = b.closed ? map.closed! : map[last]!;
@@ -996,6 +1013,7 @@ function verdictStamp(st: MatchState): HTMLElement {
     'div',
     { style: 'position:absolute;left:50%;top:330px;transform:translateX(-50%);display:flex;gap:16px;align-items:center' },
     h('div.pop', { style: `font-family:var(--display);font-size:64px;font-weight:900;color:${color};padding:4px 28px;border:6px solid ${color};border-radius:12px;background:rgba(243,227,195,0.95);transform:rotate(-6deg);box-shadow:0 8px 0 rgba(0,0,0,0.3)` }, label),
+    bumper && !b.closed ? h('span.tag.pop', { style: 'font-size:20px;padding:6px 16px;background:#FFD166' }, `Bumper batch +${bumper} ★`) : '',
     rival ? h('span.pill', { style: 'font-size:18px' }, `Rivals: ${rival.closed ? 'Closed' : rival.tray + (rival.thirteenth >= 0 ? 1 : 0) >= order(st).need ? 'Filled' : 'Fined'}`) : '',
   );
 }

@@ -20,7 +20,7 @@ export interface OvenLink {
   seats: Seat[];
   bakeryOf(seat: number): number;
   need: number;
-  /** loaves already on each bakery's tray this order (before the oven) */
+  /** loaves already on each bakery's tray this order (before the oven), exact (not rounded) */
   trayBefore: number[];
   coop: boolean;
 }
@@ -280,7 +280,8 @@ export function oven(env: MiniEnv, link: OvenLink): MiniGame {
       // the shared tray counter(s)
       const bakeries = [...new Set(link.seats.map((_, i) => link.bakeryOf(i)))].filter((b) => b >= 0);
       bakeries.forEach((b, i) => {
-        const have = Math.max(0, (link.trayBefore[b] ?? 0) + (ov.loaves[b] ?? 0));
+        // the exact total, rounded like the tray's (a tray's loaves are an exact share)
+        const have = Math.max(0, Math.round((link.trayBefore[b] ?? 0) + (ov.loaves[b] ?? 0)));
         const mine = b === link.bakeryOf(link.me);
         const x = 1240;
         const y = 420 + i * 90;
@@ -404,6 +405,15 @@ export function oven(env: MiniEnv, link: OvenLink): MiniGame {
     result(): GameResult {
       // the host scores the oven itself
       return { q: 0 };
+    },
+    // every tray is out: the oven is done (the host ends it a moment later, see flow.ts)
+    finished: () => {
+      const ov = link.state();
+      return !!ov && ov.trays.length > 0 && ov.trays.every((x) => x.st === 'out');
+    },
+    goal: () => {
+      const own = link.state()?.trays.filter((x) => x.owner === link.me) ?? [];
+      return [own.filter((x) => x.st === 'out').length, own.length];
     },
   };
 

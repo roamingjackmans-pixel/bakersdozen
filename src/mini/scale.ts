@@ -1,10 +1,10 @@
 // Scale: weigh by feel. Hold to pour flour (it pours faster the longer you hold), tap for a pinch, then Weigh.
-// The needle wobbles (less with Scale skill). The target is marked on the dial; Calibrated Scale adds a zone around
-// it and steadies the needle. The glove shows where to hold (the sack) and, once you've poured, the Weigh button.
+// The needle wobbles (less with Scale skill) and lags a fast pour; on Weigh it settles on the judged weight. The target
+// is marked on the dial; Calibrated Scale adds a green zone exactly as wide as a good weigh and steadies the needle. The glove shows where to hold (the sack) and, once you've poured, the Weigh button.
 // A nod to the old short-weight laws: the Inspector checks every gram.
 import { audio } from '../audio/audio';
 import type { GameResult } from '../game/types';
-import { Floaters, INK, Particles, circle, cue, ellipse, fillInk, loop, rr, seeded, text, woodBackground, type Live, type MiniEnv, type MiniGame } from './common';
+import { Floaters, INK, Particles, circle, cue, ellipse, fillInk, goalFor, loop, rr, seeded, text, woodBackground, type Live, type MiniEnv, type MiniGame } from './common';
 
 export const DX = 820;
 export const DY = 330;
@@ -14,6 +14,28 @@ export const WEIGH = { x: 1030, y: 640, w: 200, h: 90 };
 export const SACK = { x: 520, y: 250 };
 
 const ang = (w: number): number => -Math.PI * 0.75 + (w / MAXG) * Math.PI * 1.5;
+
+/** the score falls to 0 this far off the target (a share of it), along this curve */
+const SPREAD = 0.22;
+const CURVE = 1.15;
+/** a weigh scoring this or better is good: green number, green result chip */
+export const GOOD = 0.75;
+
+/** grams off the target where a weigh stops being good. Calibrated Scale's green zone is exactly this wide, so the
+ * needle resting in the green always means a good weigh (a fixed ±22 g zone was wider than good below ~450 g) */
+export function goodErr(target: number): number {
+  return target * SPREAD * (1 - GOOD ** (1 / CURVE));
+}
+
+/** how a weigh of `w` grams scores against `target` */
+export function judgeWeigh(w: number, target: number): { score: number; good: boolean; exact: boolean } {
+  const err = Math.abs(w - target);
+  if (err <= 3) return { score: 1, good: true, exact: true };
+  const good = err <= goodErr(target);
+  const score = Math.max(0, 1 - err / (target * SPREAD)) ** CURVE;
+  // the zone's edge, exactly: floating point never puts a green weigh under GOOD or a red one over it
+  return { score: good ? Math.max(score, GOOD) : Math.min(score, GOOD - 1e-6), good, exact: false };
+}
 
 /** the dial: its face, the target mark (and Calibrated Scale's zone), and the needle at `shown` grams */
 export function dial(g: CanvasRenderingContext2D, shown: number, target: number, zone: boolean): void {
@@ -34,7 +56,7 @@ export function dial(g: CanvasRenderingContext2D, shown: number, target: number,
     g.strokeStyle = 'rgba(94,154,88,0.85)';
     g.lineWidth = 18;
     g.beginPath();
-    g.arc(DX, DY, DR - 16, ang(target - 22), ang(target + 22));
+    g.arc(DX, DY, DR - 16, ang(target - goodErr(target)), ang(target + goodErr(target)));
     g.stroke();
   }
   // the target: a red pointer on the brass rim and a line in to the numbers
@@ -118,6 +140,7 @@ interface Target {
   g: number;
   w: number;
   score: number;
+  good: boolean;
   done: boolean;
 }
 
@@ -125,7 +148,7 @@ export function scale(env: MiniEnv): MiniGame {
   const rnd = seeded(env.seed ^ 0x5ca1e);
   const targets: Target[] = [];
   const add = (): void => {
-    targets.push({ g: Math.round((180 + rnd() * 700) / 5) * 5, w: 0, score: 0, done: false });
+    targets.push({ g: Math.round((180 + rnd() * 700) / 5) * 5, w: 0, score: 0, good: false, done: false });
   };
   add();
   const cal = env.buffs.includes('scale');
@@ -145,21 +168,29 @@ export function scale(env: MiniEnv): MiniGame {
   const weighBtn = WEIGH;
 
   const cur = (): Target => targets[targets.length - 1]!;
+  // the objective: this many weighs (the pace the score asks for); the game ends once they're in
+  const goal = goalFor(env.seconds, 8, 3);
+  const weighed = (): number => targets.filter((x) => x.done).length;
 
   function weigh(): void {
     const t = cur();
     if (t.done || t.w <= 0 || pause > 0) return;
     t.done = true;
+    // the needle settles on the weight being judged: it lags a fast pour, so it could still read green while the bowl
+    // is already heavy, and the verdict must never contradict the dial
+    shown = t.w;
+    needleV = 0;
     const err = Math.abs(t.w - t.g);
-    t.score = Math.max(0, 1 - err / (t.g * 0.22)) ** 1.15;
-    if (err <= 3) {
+    const j = judgeWeigh(t.w, t.g);
+    t.score = j.score;
+    t.good = j.good;
+    if (j.exact) {
       fl.add('Exact', DX, DY - DR - 40, '#FFD166', 42);
       audio.sfx('perfect');
       lastE = 'perfect';
       combo++;
-      t.score = 1;
       fx.spawn(DX, DY, 20, { kind: 1, color: '#FFE7A3', speed: 300, r: 12, g: 0 });
-    } else if (t.score >= 0.75) {
+    } else if (j.good) {
       fl.add(`${t.w > t.g ? '+' : '−'}${Math.round(err)} g`, DX, DY - DR - 40, '#A8D69F', 36);
       audio.sfx('good');
       lastE = 'hit';
@@ -184,7 +215,7 @@ export function scale(env: MiniEnv): MiniGame {
       flicker += dt;
       if (pause > 0) {
         pause -= dt;
-        if (pause <= 0) {
+        if (pause <= 0 && weighed() < goal) {
           add();
           shown = 0;
           holdT = 0;
@@ -238,7 +269,7 @@ export function scale(env: MiniEnv): MiniGame {
         .slice(-6)
         .forEach((x, i) => {
           rr(g, 110 + i * 80, 300, 68, 44, 10);
-          fillInk(g, x.score >= 0.75 ? '#A8D69F' : x.score > 0.3 ? '#E9D7B0' : '#E06B5F', 3);
+          fillInk(g, x.good ? '#A8D69F' : x.score > 0.3 ? '#E9D7B0' : '#E06B5F', 3);
           text(g, `${Math.round(x.score * 100)}`, 144 + i * 80, 322, { size: 22, color: '#2A1A12', font: 'ui' });
         });
       fx.draw(g);
@@ -261,6 +292,8 @@ export function scale(env: MiniEnv): MiniGame {
       }
       if (down && (code === 'Enter' || code === 'KeyW')) weigh();
     },
+    finished: () => weighed() >= goal && pause <= 0,
+    goal: () => [weighed(), goal],
     peek: () => ({ target: cur(), pause, weighBtn }),
     live(): Live {
       const done = targets.filter((x) => x.done);
@@ -274,7 +307,7 @@ export function scale(env: MiniEnv): MiniGame {
       }
       const done = targets.filter((x) => x.done);
       const q = done.length ? done.reduce((s, x) => s + x.score, 0) / done.length : 0;
-      const pace = Math.min(1, done.length / Math.max(3, env.seconds / 8));
+      const pace = Math.min(1, done.length / goal);
       return { q: q * (0.55 + 0.45 * pace), perfect: done.filter((x) => x.score >= 0.95).length };
     },
     stop() {

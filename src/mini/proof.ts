@@ -4,7 +4,7 @@
 // shows where to hold, the first doughs say "let go to bake", and the ruler is shaded where doughs start to give.
 import { audio } from '../audio/audio';
 import type { GameResult } from '../game/types';
-import { Floaters, INK, Particles, cue, ellipse, fillInk, loop, pill, rr, seeded, sparkle, text, woodBackground, type Live, type MiniEnv, type MiniGame } from './common';
+import { Floaters, INK, Particles, cue, ellipse, fillInk, goalFor, loop, pill, rr, seeded, sparkle, text, woodBackground, type Live, type MiniEnv, type MiniGame } from './common';
 
 interface Dough {
   peak: number;
@@ -99,6 +99,9 @@ export function proof(env: MiniEnv): MiniGame {
   let riseTick = 0;
 
   const cur = (): Dough => doughs[doughs.length - 1]!;
+  // the objective: this many doughs out (the pace the score asks for); the game ends once they're done
+  const goal = goalFor(env.seconds, 9, 3);
+  const out = (): number => doughs.filter((x) => x.state === 'baked' || x.state === 'collapsed').length;
 
   function bake(): void {
     const d = cur();
@@ -158,7 +161,7 @@ export function proof(env: MiniEnv): MiniGame {
       if (pause > 0) {
         pause -= dt;
         d.t += dt;
-        if (pause <= 0) doughs.push(newDough());
+        if (pause <= 0 && out() < goal) doughs.push(newDough());
         return;
       }
       if (d.state === 'wait' && holding) d.state = 'rise';
@@ -229,6 +232,8 @@ export function proof(env: MiniEnv): MiniGame {
     key(code, down) {
       if (code === 'Space' || code === 'Enter' || code === 'KeyJ' || code === 'KeyF') holding = down;
     },
+    finished: () => out() >= goal && pause <= 0,
+    goal: () => [out(), goal],
     peek: () => ({ dough: cur(), pause }),
     live(): Live {
       const fin = doughs.filter((x) => x.state === 'baked' || x.state === 'collapsed');
@@ -243,7 +248,7 @@ export function proof(env: MiniEnv): MiniGame {
       const fin = doughs.filter((x) => x.state === 'baked' || x.state === 'collapsed');
       const q = fin.length ? fin.reduce((s, x) => s + x.score, 0) / fin.length : 0;
       // a handful of doughs is the expected pace; one lucky dough is not a whole shift
-      const pace = Math.min(1, fin.length / Math.max(3, env.seconds / 9));
+      const pace = Math.min(1, fin.length / goal);
       return { q: q * (0.55 + 0.45 * pace), natural20: nat20, perfect: fin.filter((x) => x.score >= 0.9).length };
     },
     stop() {

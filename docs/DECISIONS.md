@@ -114,3 +114,64 @@ three AIs and three slots a player could wait the whole game with a tray in hand
 An AI now leaves a just-freed slot to a waiting player with fewer trays in for up to 2.5 s, after which it's anyone's
 (an idle player doesn't stall the bakery). AI-only nights, and so the balance numbers, are unchanged; the queue label
 says "Oven full · wait" when there's no slot.
+
+**D27 — One game between counts, in whole loaves (owner, 2026-11-21).** A chained order (Double Bake, Double Shift,
+Long Night, the odd late order) played its two games back to back and counted both at the end, so players couldn't
+see what their first game put on the tray. Now every game is followed by the 4.5 s count. After a chain's first game
+that's all: the second game follows after 3 s, and the Apprentice, the 13th-loaf call and the verdict come once,
+after the last game. The count starts from `Bakery.counted`, the whole loaves already counted, so it runs in whole
+loaves. It used to start from the rounded tray minus the exact shares, which showed counts like "7.5 / 12" whenever
+the tray rounded up. The ★ / tips floats show that game's own numbers (`PlayerState.lastGame`), so the second count
+doesn't repeat the first. Scoring is unchanged. The AI's oven moves are seeded from the clock (`aiOven`), and a
+chain's oven now starts 4.5 s later, so the balance report reshuffles within its noise: survival and fines move by
+about a point at most. A Long Night gets about a minute longer (31 → 32 min of AI play).
+
+**D28 — In Scale, green means good (owner, 2026-11-21).** The needle could rest in Calibrated Scale's green zone and
+still be told "Too heavy". The zone was a fixed ±22 g, but a weigh is good (score ≥ 0.75, a green number and chip)
+only within ±4.9% of the target, which is narrower than 22 g for every target under ~450 g. The zone is now drawn
+from the same rule the verdict uses (`goodErr` / `judgeWeigh` in `src/mini/scale.ts`), so it scales with the target:
+±8.8 g at 180 g, ±43 g at 880 g. The needle also lags a fast pour by up to ~16 g, so it could read green at the moment
+of Weigh while the bowl was already heavy. On Weigh it now settles at once on the judged weight, so the dial and the
+verdict always agree. Scores are unchanged.
+
+**D29 — The 13th-loaf popup pops in once (owner, 2026-11-21).** The popup was rebuilt every time anyone claimed or
+passed, and each rebuild replayed its pop-in, so a player saw it pop up once per AI decision. The box (and its timer)
+is now built once per order and only its contents update.
+
+**D30 — The host picks mini game length (owner, 2026-11-21).** A lobby choice of 35 / 50 / 70 s (×0.7 / ×1 / ×1.4
+on every mini game's clock; `MatchCfg.pace`, `PACES`). The objectives scale with the clock (D31), so a short game asks
+for fewer bakes rather than the same bakes in less time, and the balance holds. The Shared Oven and Dawn keep their
+clocks: they have a set number of trays (4 / 6 each) and now close once those are out; a shorter oven would only
+leave trays unbaked. Campaign and daily nights stay at 50 s. In the lobby, AI rivals and Mini games each sit on one
+line with their label; the baker grid and detail panel gave up 40 px of width for it, so the rules panel didn't grow.
+
+**D31 — A game ends once its objective is met (owner, 2026-11-21).** Proof, Decorate and Scale hand out targets
+forever, and the score's pace term stops rising at a set number of them (one per 9 / 12 / 8 s). That number is now
+the objective: a counter shows it by the clock, and once it's met the game stops, shows "Done" and sends its result.
+The pace term divides by the rounded objective (6.25 weighs → 6), a touch kinder at the margin. Rush Order's
+objective is getting a recipe of 6 right in a 50 s game (4–7, by the clock): longer recipes score more up to there
+(the reach term now tops out at the objective; at 50–58 s that's unchanged). Knead's objective is the song, which
+already lasts the game. The oven's is every tray out. The host moves on as soon as every person has sent a result,
+so solo players skip the rest of the clock, and online the night moves on once the last person finishes. AI-only
+nights still run the full clock, so the balance sims measure the same thing.
+
+**D32 — Decorate: finish the design (owner, 2026-11-21).** A design used to count as done at 94% of its line
+covered, or at 60% once the nozzle reached the end dot. On a closed shape the end dot is the start dot, so passing
+back by it could end a design with 40% of it bare. Now it's done at 99% (`DONE_AT`): a stray dot or two, never a
+stretch of line. The glove's idle hint already points at the first bare dot.
+
+**D33 — A bumper batch pays (owner, 2026-11-21).** A tray that ends 3+ loaves over its order (the tray itself, not
+the 13th loaf, which already pays) gives everyone who baked on it +1 ★, +2 at 4 over, +3 at 5 or more. It's ★, not
+Tips, so it can't buy the bakery's survival, and everyone on a shared tray gets the same, so it rewards the table
+without picking a winner. At first the oven paid it nearly every order; D34 fixed that.
+
+**D34 — The oven bakes its share, not a loaf a tray (owner, 2026-11-21).** Each oven tray was worth
+`max(1, round(share))` loaves. At a four-baker table a tray's share is 0.86, so 16 trays made 16 loaves on a 12-loaf
+order (+4), and Dawn's 24 trays made ~25 (+12). Dawn's golden trays (×1.6) were added on top of the share, and an
+oven that was one game of a chain wasn't halved like every other chained game (`loafCap`), so chain + oven landed +8.
+All of it was regardless of how the table baked, so the bumper batch (D33) paid on almost every oven order.
+Now each tray holds its exact share, like every other game's loaves, and the tray rounds the total. Golden trays are
+×1.6 within the share, a chained oven makes half, and a burnt tray costs a loaf or the tray's worth, whichever is
+less. The live counter in the oven adds the exact totals and rounds, so it never shows a fraction. At Normal AI every
+order type now ends 0–2 over at any table size. Solo and two-baker tables, whose trays rounded the other way
+(3.45 → 3), get their full share too. Survival and fines held within noise in the balance report.

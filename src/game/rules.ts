@@ -1,6 +1,6 @@
 // The rules: pure functions over the plain-JSON MatchState. Only the host (or the solo game) calls them; guests
 // just draw the state the host sends. No Math.random(): every draw goes through the match's seeded Rng.
-import { BAKER, BAL, BUFFS, CUSTOMERS, ITEMS, MINI_IDS, MODS, PERSONAL_BUFFS, RARE_BUFFS, TEAM_BUFFS, TWIST_IDS, skillMult } from './data';
+import { BAKER, BAL, BUFFS, CUSTOMERS, ITEMS, MINI_IDS, MODS, PACES, PERSONAL_BUFFS, RARE_BUFFS, TEAM_BUFFS, TWIST_IDS, skillMult } from './data';
 
 const MODS_CHAOS = new Set<string>(MODS.filter((m) => m.chaos).map((m) => m.id));
 import { Rng, clamp } from './rng';
@@ -18,7 +18,7 @@ export function emptyStats(): PlayerState['stats'] {
 
 function newPlayer(cfg: MatchCfg): PlayerState {
   const shortage = cfg.mods.includes('shortage') || (cfg.night !== null && cfg.night >= 8);
-  return { stars: 0, tips: 3, saffron: shortage ? 0 : BAL.startSaffron, loaves13: 0, buffs: [], recipeFor: null, salted: false, flourAt: 0, chipped: 0, stats: emptyStats(), last: null };
+  return { stars: 0, tips: 3, saffron: shortage ? 0 : BAL.startSaffron, loaves13: 0, buffs: [], recipeFor: null, salted: false, flourAt: 0, chipped: 0, stats: emptyStats(), last: null, lastGame: null };
 }
 
 /** which bakery each seat bakes for */
@@ -45,6 +45,7 @@ export function newMatch(cfg: MatchCfg, seats: Seat[], now: number): MatchState 
     tray: 0,
     trayExact: 0,
     trayBy: seats.map(() => 0),
+    counted: 0,
     seals: maxSeals(cfg),
     maxSeals: maxSeals(cfg),
     closed: false,
@@ -188,6 +189,8 @@ export function gameSeconds(st: MatchState): number {
   if (g === 'dawn') s = BAL.dawnS;
   else if (o.games.length > 1) s = st.cfg.length === 'long' ? BAL.longS : BAL.chainS;
   else s = st.round < 4 ? BAL.playS : BAL.playLateS;
+  // the lobby's mini game length; the Shared Oven and Dawn have a set number of trays and end once they're out
+  if (g !== 'oven' && g !== 'dawn') s *= PACES.find((p) => p.id === st.cfg.pace)?.mult ?? 1;
   if (o.rush) s *= 0.75;
   if (has(st, 'midnight')) s *= 0.75;
   return Math.max(4, Math.round(s * BAL.timeScale));
@@ -299,6 +302,7 @@ export function scoreResult(st: MatchState, seat: number, res: GameResult): Roun
   p.salted = false;
   p.flourAt = 0;
   const prev = st.part > 0 ? p.last : null;
+  p.lastGame = { q, loaves, stars: starsI, tips, saffron, grade };
   p.last = prev
     ? { q: (prev.q + q) / 2, loaves: prev.loaves + loaves, stars: prev.stars + starsI, tips: prev.tips + tips, saffron: prev.saffron + saffron, grade: gradeOf((prev.q + q) / 2) }
     : { q, loaves, stars: starsI, tips, saffron, grade };
@@ -374,6 +378,11 @@ export function resolveThirteenth(st: MatchState): void {
   saveRng(st, r);
 }
 
+/** ★ each baker on a tray gets for `spare` loaves over the order: 3 over +1, 4 over +2, 5 or more +3 */
+export function bumperStars(spare: number): number {
+  return spare >= BAL.bumperAt ? Math.min(BAL.bumperMax, spare - BAL.bumperAt + 1) : 0;
+}
+
 /** fill or fine every bakery; returns true when the night is over early */
 export function settleOrder(st: MatchState): boolean {
   const o = order(st);
@@ -384,6 +393,12 @@ export function settleOrder(st: MatchState): boolean {
       b.filled++;
       if (o.customer === 'sheriff') b.sheriff++;
       pushEvent(st, 'filled', { v: bi, s: o.customer });
+      // a bumper batch: the tray itself (not the 13th loaf) well over the order pays everyone who baked on it
+      const bonus = bumperStars(b.tray - o.need);
+      if (bonus > 0) {
+        for (const s of b.members) st.players[s]!.stars += bonus;
+        pushEvent(st, 'bumper', { v: bi, to: bonus });
+      }
     } else if (b.bribes > 0) {
       b.bribes--;
       pushEvent(st, 'bribed', { v: bi });
@@ -413,6 +428,7 @@ export function resetTrays(st: MatchState): void {
     b.tray = 0;
     b.trayExact = 0;
     b.trayBy = st.seats.map(() => 0);
+    b.counted = 0;
     b.thirteenth = -1;
   }
   st.claims = [];

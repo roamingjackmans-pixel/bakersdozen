@@ -3,11 +3,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { audio } from '../src/audio/audio';
 import type { MiniEnv, MiniGame } from '../src/mini/common';
-import { decorate } from '../src/mini/decorate';
+import { DONE_AT, decorate } from '../src/mini/decorate';
 import { knead } from '../src/mini/knead';
 import { proof } from '../src/mini/proof';
 import { rush } from '../src/mini/rush';
-import { scale } from '../src/mini/scale';
+import { GOOD, goodErr, judgeWeigh, scale } from '../src/mini/scale';
 import type { GameId } from '../src/game/types';
 
 function env(game: GameId, extra: Partial<MiniEnv> = {}): MiniEnv {
@@ -141,6 +141,23 @@ describe('Scale', () => {
   };
   it('pouring to the gram scores high', () => expect(play(scale(env('scale')), 50, pourTo(1))).toBeGreaterThan(0.8));
   it('a short pour is short weight', () => expect(play(scale(env('scale')), 50, pourTo(0.6))).toBeLessThan(0.15));
+  it("the green zone is exactly a good weigh, for every target", () => {
+    // targets run 180..880 g in steps of 5
+    for (let target = 180; target <= 880; target += 5) {
+      const edge = goodErr(target);
+      for (const side of [1, -1]) {
+        const inside = judgeWeigh(target + side * (edge - 0.01), target);
+        const outside = judgeWeigh(target + side * (edge + 0.01), target);
+        expect(inside.good).toBe(true);
+        expect(inside.score).toBeGreaterThanOrEqual(GOOD);
+        expect(outside.good).toBe(false);
+        expect(outside.score).toBeLessThan(GOOD);
+      }
+    }
+    // the old fixed ±22 g zone called a 200 g target's 220 g "green"; it's too heavy
+    expect(judgeWeigh(220, 200).good).toBe(false);
+    expect(goodErr(200)).toBeLessThan(22);
+  });
 });
 
 describe('Rush Order', () => {
@@ -164,5 +181,136 @@ describe('Rush Order', () => {
       g.down(x, y);
     });
     expect(q).toBeLessThan(0.3);
+  });
+});
+
+describe('Objectives: a game ends once its goal is met', () => {
+  /** plays like play(), but stops at the first frame the game says it's finished; returns that game time, or -1 */
+  function finishedAt(g: MiniGame, seconds: number, bot: (g: MiniGame, t: number, frame: number) => void): number {
+    T = 0;
+    vi.spyOn(audio, 'time').mockImplementation(() => T);
+    const dt = 1 / 60;
+    let f = 0;
+    for (let t = 0; t < seconds; t += dt) {
+      T = t;
+      g.update(t, dt);
+      if (g.finished?.()) return t;
+      bot(g, t, f++);
+    }
+    return -1;
+  }
+  type DP = { pts: [number, number][]; slide: number; cx: number; cy: number; covered: Uint8Array; done: boolean };
+  /** traces each design, lifting the pen over indexes in `skip` (a fraction range of the line) */
+  const tracer = (skip?: [number, number]) => {
+    let i = -1;
+    return (g: MiniGame): void => {
+      const p = g.peek!() as DP;
+      if (p.slide > 0.05 || p.done) {
+        i = -1;
+        return;
+      }
+      const n = p.pts.length;
+      if (i < 0) {
+        i = 0;
+        g.down(p.cx + p.pts[0]![0], p.cy + p.pts[0]![1]);
+        return;
+      }
+      if (i >= n - 1) return;
+      i = Math.min(n - 1, i + 3);
+      if (skip && i >= skip[0] * n && i < skip[1] * n) {
+        // over the gap: pen up, then down again on the far side
+        g.up(0, 0);
+        i = Math.ceil(skip[1] * n);
+        g.down(p.cx + p.pts[i]![0], p.cy + p.pts[i]![1]);
+        return;
+      }
+      g.move(p.cx + p.pts[i]![0], p.cy + p.pts[i]![1], true);
+      if (i >= n - 1) g.up(0, 0);
+    };
+  };
+
+  it('Scale: weighing to the gram meets the goal early', () => {
+    const g = scale(env('scale'));
+    let holding = false;
+    const t = finishedAt(g, 50, (gm) => {
+      const p = gm.peek!() as { target: { g: number; w: number; done: boolean }; pause: number; weighBtn: { x: number; y: number } };
+      if (p.pause > 0 || p.target.done) return;
+      if (!holding && p.target.w < p.target.g - 3) {
+        gm.down(300, 300);
+        holding = true;
+      }
+      if (holding && p.target.w >= p.target.g - (p.target.g - p.target.w > 60 ? 0 : 4)) {
+        gm.up(0, 0);
+        holding = false;
+        gm.down(p.weighBtn.x + 10, p.weighBtn.y + 10);
+      }
+    });
+    expect(t).toBeGreaterThan(0);
+    const [done, goal] = g.goal!();
+    expect(done).toBe(goal);
+    expect(g.result().q).toBeGreaterThan(0.8);
+  });
+
+  it('Proof: letting go in the tremble meets the goal early', () => {
+    const g = proof(env('proof'));
+    const t = finishedAt(g, 50, (gm) => {
+      const p = gm.peek!() as { dough: { peak: number; h: number; state: string }; pause: number };
+      if (p.pause > 0) return;
+      if (p.dough.state === 'wait') gm.down(0, 0);
+      else if (p.dough.state === 'rise' && p.dough.h >= p.dough.peak * 0.965) gm.up(0, 0);
+    });
+    expect(t).toBeGreaterThan(0);
+    expect(g.goal!()[0]).toBe(g.goal!()[1]);
+    expect(g.result().q).toBeGreaterThan(0.9);
+  });
+
+  it('Decorate: tracing every design meets the goal early', () => {
+    const g = decorate(env('decorate'));
+    const t = finishedAt(g, 50, tracer());
+    expect(t).toBeGreaterThan(0);
+    expect(g.goal!()[0]).toBe(g.goal!()[1]);
+    expect(g.result().q).toBeGreaterThan(0.85);
+  });
+
+  it('Rush: getting the goal-length recipe right meets the goal early', () => {
+    const g = rush(env('rush'));
+    const t = finishedAt(g, 50, (gm, _t, f) => {
+      const p = gm.peek!() as { recipe: { items: number[]; got: number; phase: string }; layout: number[]; pause: number; slot: (i: number) => [number, number] };
+      if (p.recipe.phase !== 'build' || p.pause > 0 || f % 12) return;
+      const [x, y] = p.slot(p.layout.indexOf(p.recipe.items[p.recipe.got]!));
+      gm.down(x, y);
+    });
+    expect(t).toBeGreaterThan(0);
+    expect(g.goal!()).toEqual([6, 6]);
+  });
+
+  it('doing nothing never meets a goal', () => {
+    for (const make of [scale, proof, decorate, rush]) expect(finishedAt(make(env(make.name as GameId)), 50, () => {})).toBe(-1);
+  });
+
+  it('the goal scales with the game length', () => {
+    expect(scale(env('scale', { seconds: 35 })).goal!()[1]).toBeLessThan(scale(env('scale', { seconds: 70 })).goal!()[1]);
+    expect(proof(env('proof', { seconds: 35 })).goal!()[1]).toBeLessThan(proof(env('proof', { seconds: 70 })).goal!()[1]);
+    expect(decorate(env('decorate', { seconds: 35 })).goal!()[1]).toBeLessThan(decorate(env('decorate', { seconds: 70 })).goal!()[1]);
+  });
+
+  it('Decorate: a design with a gap in its line is not done', () => {
+    const g = decorate(env('decorate'));
+    // skip 6% of the line in the middle (it used to be done at 94% covered)
+    finishedAt(g, 12, tracer([0.45, 0.51]));
+    const p = g.peek!() as DP;
+    const cov = p.covered.reduce((s, v) => s + v, 0) / p.pts.length;
+    expect(cov).toBeGreaterThan(0.9);
+    expect(cov).toBeLessThan(DONE_AT);
+    expect(p.done).toBe(false);
+    expect(g.goal!()[0]).toBe(0);
+  });
+
+  it('Decorate: jumping to the end dot after 60% does not finish the design', () => {
+    const g = decorate(env('decorate'));
+    finishedAt(g, 12, tracer([0.62, 0.97]));
+    const p = g.peek!() as DP;
+    expect(p.done).toBe(false);
+    expect(g.goal!()[0]).toBe(0);
   });
 });

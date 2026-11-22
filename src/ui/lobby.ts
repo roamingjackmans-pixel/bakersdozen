@@ -1,15 +1,16 @@
 // Play: solo nights, the 13-night campaign, the daily challenge and online lobbies. The lobby is the baker select
 // from the mockups (3×2 portrait grid, a detail panel with perk, weakness and loaf-icon skills, four player slots)
-// plus the rules: style, length, modifiers and AI level. Online, the host owns the lobby and sends it to everyone.
+// plus the rules: style, length, AI level, mini game length and modifiers. Online, the host owns the lobby and sends
+// it to everyone.
 import { mainMenu, show } from '../app';
 import { audio } from '../audio/audio';
-import { BAKER, BAKERS, COSMETIC, COSMETICS, DEFAULT_COSMETICS, GAMES, LENGTHS, MINI_IDS, MODS, STYLES } from '../game/data';
+import { BAKER, BAKERS, COSMETIC, COSMETICS, DEFAULT_COSMETICS, GAMES, LENGTHS, MINI_IDS, MODS, PACES, STYLES } from '../game/data';
 import { HostMatch } from '../game/match';
 import { cosmeticsFor, today } from '../game/profile';
 import { hash } from '../game/rng';
 import { newMatch } from '../game/rules';
 import { save, session } from '../game/session';
-import type { AiLevel, BakerId, Cosmetics, Length, MatchCfg, ModId, Seat, Style } from '../game/types';
+import type { AiLevel, BakerId, Cosmetics, Length, MatchCfg, ModId, Pace, Seat, Style } from '../game/types';
 import { api, type FriendsView } from '../net/api';
 import { Net, type RoomView } from '../net/socket';
 import { GAME_ICONS, LOAF13, itemSVG, lineIcon } from '../render/art';
@@ -38,6 +39,8 @@ export interface LState {
   seats: LSeat[];
   style: Style;
   length: Length;
+  /** mini game length (campaign and daily stay normal); a lobby saved before it existed has none */
+  pace?: Pace;
   mods: ModId[];
   aiLevel: AiLevel;
   mode: Mode;
@@ -76,7 +79,7 @@ function humanSeat(id: string, name: string, team = 0): LSeat {
 }
 
 function newLobby(mode: Mode, extra: Partial<LState> = {}): LState {
-  const st: LState = { code: null, host: me(), seats: [], style: 'coopetition', length: 'full', mods: [], aiLevel: 2, mode, night: null, daily: null, ...extra };
+  const st: LState = { code: null, host: me(), seats: [], style: 'coopetition', length: 'full', pace: 'normal', mods: [], aiLevel: 2, mode, night: null, daily: null, ...extra };
   L = st;
   st.seats = [humanSeat(me(), session.user?.name ?? 'You', 0), emptySeat(0), emptySeat(1), emptySeat(1)];
   if (mode !== 'online') for (let i = 1; i < 4; i++) st.seats[i] = aiSeat(i < 2 ? 0 : 1, st.aiLevel);
@@ -569,7 +572,7 @@ export function lobbyScreen(): void {
         L.mode === 'online' ? h('button', { onclick: () => friendsModal(true) }, 'Invite friends') : '',
       );
       // ---- baker grid
-      const grid = h('div.baker-grid', { style: 'width:560px' });
+      const grid = h('div.baker-grid', { style: 'width:536px' });
       for (const b of BAKERS) {
         const taker = L.seats.find((s) => s.baker === b.id);
         const takenByOther = !!taker && taker !== mine;
@@ -599,7 +602,7 @@ export function lobbyScreen(): void {
       const fb = BAKER[focus];
       const detail = h(
         'div.panel.col',
-        { style: 'width:360px;gap:10px' },
+        { style: 'width:344px;gap:10px' },
         h('div.row', svg(portrait(fb.id, 92, mine?.baker === fb.id ? mine.cosmetics : cosmeticsFor(session.profile, fb.id))), h('div', h('h3', { style: 'font-size:30px' }, fb.name), h('div.dim', { style: 'font-weight:800' }, fb.title))),
         h('div', h('span.tag', { style: 'background:#A8D69F' }, 'Perk'), h('div', { style: 'font-weight:800;margin-top:6px' }, fb.perk)),
         h('div', h('span.tag', { style: 'background:#F2A08C' }, 'Weakness'), h('div', { style: 'font-weight:800;margin-top:6px' }, fb.weakness)),
@@ -607,7 +610,7 @@ export function lobbyScreen(): void {
         mine?.baker === fb.id ? h('button.tiny', { onclick: () => wardrobe(fb.id, () => render()) }, 'Wardrobe') : '',
       );
       // ---- rules
-      const rules = h('div.panel.col', { style: 'flex:1;gap:10px;min-width:0' });
+      const rules = h('div.panel.col.lobby-rules', { style: 'flex:1;min-width:0' });
       const seg = <T extends string>(opts: { id: T; name: string }[], cur: T, set: (v: T) => void, can: boolean): HTMLElement =>
         h('div.seg', ...opts.map((o) => h(`button${o.id === cur ? '.on' : ''}`, { type: 'button', disabled: !can, onclick: () => (set(o.id), changed()) }, o.name)));
       const can = host && !locked;
@@ -616,22 +619,28 @@ export function lobbyScreen(): void {
       rules.appendChild(h('div.small', { style: 'font-weight:700;color:#F3E6CF;min-height:38px' }, STYLES.find((s) => s.id === L!.style)!.rule));
       rules.appendChild(h('span.tag', 'Length'));
       rules.appendChild(seg(LENGTHS.map((x) => ({ id: x.id, name: x.name })), L.length, (v) => (L!.length = v), can));
-      rules.appendChild(h('span.tag', 'AI rivals'));
+      // a label and its choices on one line (saves the panel a row)
+      const inline = (label: string, control: HTMLElement): HTMLElement => h('div.row', { style: 'gap:10px' }, h('span.tag', { style: 'flex-shrink:0;width:160px;text-align:center;white-space:nowrap' }, label), h('div', { style: 'flex:1;min-width:0' }, control));
       rules.appendChild(
-        seg(
-          [
-            { id: '1', name: 'Easy' },
-            { id: '2', name: 'Normal' },
-            { id: '3', name: 'Hard' },
-          ],
-          String(L.aiLevel) as '1' | '2' | '3',
-          (v) => {
-            L!.aiLevel = Number(v) as AiLevel;
-            for (const s of L!.seats) if (s.kind === 'ai') s.level = L!.aiLevel;
-          },
-          can,
+        inline(
+          'AI rivals',
+          seg(
+            [
+              { id: '1', name: 'Easy' },
+              { id: '2', name: 'Normal' },
+              { id: '3', name: 'Hard' },
+            ],
+            String(L.aiLevel) as '1' | '2' | '3',
+            (v) => {
+              L!.aiLevel = Number(v) as AiLevel;
+              for (const s of L!.seats) if (s.kind === 'ai') s.level = L!.aiLevel;
+            },
+            can,
+          ),
         ),
       );
+      // how long each mini game runs (the Shared Oven and Dawn run until their trays are out)
+      rules.appendChild(inline('Mini games', seg(PACES.map((p) => ({ id: p.id, name: p.about.replace('~', '') })), locked ? 'normal' : (L.pace ?? 'normal'), (v) => (L!.pace = v), can)));
       rules.appendChild(
         h(
           'div.row',
@@ -681,7 +690,7 @@ export function lobbyScreen(): void {
           : h('div.dim', { style: 'font-weight:800;text-align:center' }, 'The host starts the night.'),
         startErr ? h('div.small', { style: 'color:#F2A08C;font-weight:800' }, startErr) : !allReady && host ? h('div.small.dim', 'Waiting for everyone to lock in.') : '',
       );
-      body.replaceChildren(top, h('div.row', { style: 'align-items:stretch;gap:24px;height:470px' }, grid, detail, rules), h('div.row', { style: 'align-items:stretch;gap:20px' }, seats, actions));
+      body.replaceChildren(top, h('div.row', { style: 'align-items:stretch;gap:24px;height:490px' }, grid, detail, rules), h('div.row', { style: 'align-items:stretch;gap:20px' }, seats, actions));
     };
     const retime = (): void => {
       // teams: two and two by default
@@ -748,7 +757,8 @@ function randomMods(): ModId[] {
 
 function modsModal(done: () => void): void {
   const body = h('div.col');
-  const close = modal(h('div.col', { style: 'width:820px' }, h('div.row', h('h2.grow', 'Modifiers'), h('button', { onclick: () => (close(), done()) }, 'Done')), body), { onClose: done });
+  // a modal fits 798 px of content (860 less padding and border); wider scrolls sideways and cuts the cards off
+  const close = modal(h('div.col', { style: 'width:790px' }, h('div.row', h('h2.grow', 'Modifiers'), h('button', { onclick: () => (close(), done()) }, 'Done')), body), { onClose: done });
   const render = (): void => {
     body.replaceChildren(
       h('div.small', { style: 'font-weight:800' }, 'Mix any. Tame ones bend the rules; chaotic ones change how the games physically play.'),
@@ -778,7 +788,7 @@ function modsModal(done: () => void): void {
 function wardrobe(baker: BakerId, done: () => void): void {
   const p = session.profile;
   const body = h('div.col');
-  const close = modal(h('div.col', { style: 'width:900px' }, h('div.row', h('h2.grow', `${BAKER[baker].name}’s wardrobe`), h('button', { onclick: () => (close(), done()) }, 'Done')), body), { onClose: done });
+  const close = modal(h('div.col', { style: 'width:900px' }, h('div.row', h('h2.grow', `${BAKER[baker].name}’s wardrobe`), h('button', { onclick: () => (close(), done()) }, 'Done')), body), { onClose: done, wide: true });
   const render = (): void => {
     const cur = cosmeticsFor(p, baker);
     const slotRow = (slot: 'apron' | 'pin' | 'badge', label: string): HTMLElement =>
@@ -847,7 +857,8 @@ async function startNight(): Promise<void> {
     cosmetics: s.cosmetics,
   }));
   const seed = L.daily ? dailyCfg(L.daily).seed : L.night ? hash(`bd-campaign-${L.night}`) : (Math.random() * 2 ** 31) >>> 0;
-  const cfg: MatchCfg = { style: L.style, length: L.length, mods: L.mods, aiLevel: L.aiLevel, seed, night: L.night, daily: L.daily };
+  const locked = L.mode === 'campaign' || L.mode === 'daily';
+  const cfg: MatchCfg = { style: L.style, length: L.length, pace: locked ? 'normal' : (L.pace ?? 'normal'), mods: L.mods, aiLevel: L.aiLevel, seed, night: L.night, daily: L.daily };
   const st = newMatch(cfg, seats, performance.timeOrigin + performance.now());
   audio.sfx('bell');
   inLobbyScreen = false;

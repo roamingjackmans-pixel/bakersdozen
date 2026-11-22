@@ -12,7 +12,8 @@ export type TrayGrade = '' | 'perfect' | 'golden' | 'dark' | 'burnt' | 'raw';
 export interface Tray {
   id: number;
   owner: number;
-  /** loaves it is worth pulled golden */
+  /** loaves it is worth pulled golden: its exact share (0.86 at a four-baker table), like every other game's; the tray
+   * rounds the total. Rounding each tray up to a whole loaf made a big table's oven overbake by 4 (Dawn by 12) */
   value: number;
   golden: boolean;
   st: 'prep' | 'queue' | 'baking' | 'out';
@@ -93,27 +94,36 @@ export function bakeLevel(t: Tray, now: number): number {
   return clamp((now - t.start) / t.dur, 0, 2);
 }
 
+/** a golden tray (Dawn) is worth this many ordinary ones */
+export const GOLDEN_MULT = 1.6;
+
 export function newOven(st: MatchState, now: number, seconds: number): OvenState {
   const game = order(st).games.includes('dawn') ? 'dawn' : 'oven';
   const r = new Rng(st.rngState ^ 0x5a17);
   const per = traysPerSeat(game);
+  const isGolden = (i: number): boolean => game === 'dawn' && i % 3 === 2;
+  // a baker's trays share their part of the order: golden trays (Dawn) are ×1.6 within that share, not on top of it,
+  // and an oven that's one game of a chain makes half, like any chained game (loafCap)
+  let weight = 0;
+  for (let i = 0; i < per; i++) weight += isGolden(i) ? GOLDEN_MULT : 1;
+  const chain = order(st).games.length > 1 ? 0.5 : 1;
   const trays: Tray[] = [];
   let id = 1;
   st.seats.forEach((s, seat) => {
     if (!seatOpen(st, seat)) return;
     const b = st.bakeries[bakeryOf(st, seat)]!;
     const k = Math.max(1, b.members.length);
-    const base = (order(st).need / (k * per)) * BAL.yieldFactor * 0.92 * (1 + BAL.chaosAllowance * chaosCount(st));
+    const base = (order(st).need / (k * weight)) * BAL.yieldFactor * BAL.ovenYield * chain * (1 + BAL.chaosAllowance * chaosCount(st));
     const mult = skillMult(s.baker, game);
     const tiny = has(st, 'tiny') ? 0.7 : 1;
     // Salt Shaker: this baker's trays have a narrower window
     const salt = st.players[seat]!.salted ? 0.7 : 1;
     for (let i = 0; i < per; i++) {
-      const golden = game === 'dawn' && i % 3 === 2;
+      const golden = isGolden(i);
       trays.push({
         id: id++,
         owner: seat,
-        value: Math.max(1, Math.round(base * (golden ? 1.6 : 1))),
+        value: base * (golden ? GOLDEN_MULT : 1),
         golden,
         st: game === 'dawn' ? 'prep' : 'queue',
         prep: game === 'dawn' ? 3 : 0,
@@ -255,7 +265,7 @@ export function stepOven(ov: OvenState, st: MatchState, now: number): boolean {
       emptied(ov, t.slot, now);
       t.slot = -1;
       t.at = now;
-      ov.loaves[bakeryOf(st, t.owner)]! -= 1;
+      ov.loaves[bakeryOf(st, t.owner)]! -= burnCost(t);
       ev(ov, 'burn', t.owner, t.id, 'burnt');
       changed = true;
     }
@@ -292,6 +302,11 @@ export function closeOven(ov: OvenState, st: MatchState): void {
   }
 }
 
+/** a burnt tray takes a loaf off its owner's tray (no more than the tray was worth, at a big table) */
+export function burnCost(t: Tray): number {
+  return Math.min(1, t.value);
+}
+
 /** each seat's result from the trays */
 export function ovenResults(ov: OvenState, st: MatchState): GameResult[] {
   const per = traysPerSeat(ov.game);
@@ -307,7 +322,7 @@ export function ovenResults(ov: OvenState, st: MatchState): GameResult[] {
       gsum += gv;
       if (t.grade === 'burnt') {
         burnt++;
-        loaves -= 1;
+        loaves -= burnCost(t);
       } else if (gv > 0) loaves += t.value;
       let ts = (gv * BAL.starsPerGame * BAL.gameWeight[ov.game]) / per;
       // Joe's parry: a perfectly timed pull of his own tray scores double

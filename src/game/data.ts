@@ -1,6 +1,6 @@
 // Content as data: bakers, mini games, buffs, customers, twists, modifiers, achievements, cosmetics.
 // Every balance number lives in BAL so a balance pass changes one place (docs/BALANCE.md explains them).
-import type { BakerId, BuffId, GameId, Length, MiniId, ModId, Style, TwistId } from './types';
+import type { BakerId, BuffId, GameId, Length, MiniId, ModId, Pace, Style, TwistId } from './types';
 
 export const BAL = {
   /** ★ a perfect game is worth (before Rush, buffs and the game's weight) */
@@ -11,6 +11,8 @@ export const BAL = {
   yieldFactor: 1.25,
   /** loaves = q^yieldCurve × share: under 1 so a casual table can still fill a tray */
   yieldCurve: 0.5,
+  /** the Shared Oven's trays share this much of a perfect game's loaves between them (Dawn's golden trays are ×1.6) */
+  ovenYield: 0.92,
   /** how much an AI rival's bakes vary game to game (people are streaky) */
   aiSpread: 0.2,
   /** each chaotic modifier on makes the trays this much easier to fill */
@@ -24,6 +26,10 @@ export const BAL = {
   saffronDropChance: 0.55,
   startSaffron: 1,
   thirteenthStars: 5,
+  /** a bumper batch: the tray this many loaves over the order pays every baker on it +1 ★, and +1 ★ more per
+   * extra loaf, up to bumperMax */
+  bumperAt: 3,
+  bumperMax: 3,
   freeloaderKeeps: 0.5,
   noChipPenalty: 3,
   chipStars: 1,
@@ -321,6 +327,13 @@ export const LENGTHS: { id: Length; name: string; orders: number; about: string 
   { id: 'quick', name: 'Quick Shift', orders: 7, about: '~12 min' },
   { id: 'full', name: 'Full Dozen', orders: 13, about: '~25 min' },
   { id: 'long', name: 'Long Night', orders: 13, about: '~35 min' },
+];
+
+/** mini game length: every game's clock (and so its objective) scales by `mult`; `about` is a typical game */
+export const PACES: { id: Pace; name: string; mult: number; about: string }[] = [
+  { id: 'short', name: 'Short', mult: 0.7, about: '~35 s' },
+  { id: 'normal', name: 'Normal', mult: 1, about: '~50 s' },
+  { id: 'long', name: 'Long', mult: 1.4, about: '~70 s' },
 ];
 
 // ------------------------------------------------------------------ achievements

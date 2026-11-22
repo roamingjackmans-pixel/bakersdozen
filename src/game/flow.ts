@@ -1,5 +1,6 @@
-// The night's clock: reveal → play (one or two games) → tally (count, the 13th loaf, fines) → market → next order,
-// then the Inspector's dawn check. The host (or the solo game) calls tick() about 20 times a second; guests send
+// The night's clock: reveal → play → tally (count, the 13th loaf, fines) → market → next order, then the Inspector's
+// dawn check. Every game is followed by a count: a chained order counts its first game's loaves, then plays the
+// second, then the full tally. The host (or the solo game) calls tick() about 20 times a second; guests send
 // their results and choices in. The sim tests drive the same class with a fake clock.
 import { aiResult, aiShopping, aiWantsThirteenth, sabotageTarget } from './ai';
 import { BAL } from './data';
@@ -32,6 +33,8 @@ import type { GameResult, LiveProgress, MatchState } from './types';
 
 /** seconds of "3, 2, 1" before each game starts (included in the play phase) */
 export const COUNTDOWN_S = 3;
+/** ms the oven stays open after its last tray comes out */
+export const OVEN_LINGER_MS = 1000;
 
 export class Night {
   st: MatchState;
@@ -212,6 +215,8 @@ export class Night {
     this.results = st.seats.map(() => null);
     this.aiProg.clear();
     this.plan = [];
+    // the next count starts from what's on the tray now (a chained order's first game, already counted)
+    for (const b of st.bakeries) b.counted = b.tray;
     const g = currentGame(st);
     const r = this.rng();
     // sabotage lands: a Flour Cloud bursts at a random moment of the victim's game
@@ -242,6 +247,11 @@ export class Night {
     if (ov) {
       if (stepOven(ov, st, now)) this.ovenDirty = true;
       if (aiOven(ov, st, this.minds, now, this.aiSeats())) this.ovenDirty = true;
+      // every tray is out: nothing is left to bake, so the oven closes a moment later (time to see the last pull)
+      if (ov.trays.length && now + OVEN_LINGER_MS < ov.end && ov.trays.every((t) => t.st === 'out')) {
+        ov.end = now + OVEN_LINGER_MS;
+        this.ovenDirty = true;
+      }
       if (now >= ov.end) {
         closeOven(ov, st);
         const res = ovenResults(ov, st);
@@ -252,9 +262,13 @@ export class Night {
       return;
     }
     this.fakeAiProgress(now);
-    const humansIn = this.humanSeats().every((s) => !seatOpen(st, s) || this.results[s]);
+    const humans = this.humanSeats().filter((s) => seatOpen(st, s));
+    const humansIn = humans.every((s) => this.results[s]);
     const late = now >= st.phaseEnd + BAL.resultGraceS * 1000;
-    if ((now >= st.phaseEnd && humansIn) || late) {
+    // every person has sent their result (a game ends early once its objective is met): no need to wait for the
+    // clock. AI results are decided up front; an AI-only night keeps the clock (the balance sims)
+    const allDone = humans.length > 0 && humansIn;
+    if ((now >= st.phaseEnd && humansIn) || late || allDone) {
       const r = this.rng();
       const g = currentGame(st);
       st.seats.forEach((_, seat) => {
@@ -272,21 +286,20 @@ export class Night {
     }
   }
 
+  /** every game is followed by a count of its loaves; the Apprentice, the 13th loaf and the verdict wait for the
+   * order's last game */
   private afterGame(now: number): void {
     const st = this.st;
-    const o = order(st);
-    if (st.part + 1 < o.games.length) {
-      st.part++;
-      // a short breath, then the next game of the chain
-      setPhase(st, 'reveal', now, 3);
-      this.oven = null;
-    } else {
-      this.oven = null;
-      setPhase(st, 'tally', now, BAL.tallyCountS);
-      st.tallyStep = 0;
-      beginTally(st);
-    }
+    this.oven = null;
+    setPhase(st, 'tally', now, BAL.tallyCountS);
+    st.tallyStep = 0;
+    if (!this.chainGoesOn()) beginTally(st);
     this.dirty = true;
+  }
+
+  /** a chained order with a game still to play */
+  private chainGoesOn(): boolean {
+    return this.st.part + 1 < order(this.st).games.length;
   }
 
   private fakeAiProgress(now: number): void {
@@ -308,6 +321,13 @@ export class Night {
 
   private tickTally(now: number): void {
     const st = this.st;
+    if (st.tallyStep === 0 && now >= st.phaseEnd && this.chainGoesOn()) {
+      // the first game's loaves are counted: a short breath, then the next game of the chain
+      st.part++;
+      setPhase(st, 'reveal', now, 3);
+      this.dirty = true;
+      return;
+    }
     if (st.tallyStep === 0 && now >= st.phaseEnd) {
       const anyone = st.seats.some((_, i) => canClaim(st, i));
       st.tallyStep = 1;
@@ -397,7 +417,10 @@ export class Night {
     st.part = 0;
     resetTrays(st);
     st.tallyStep = 0;
-    for (const p of st.players) p.last = null;
+    for (const p of st.players) {
+      p.last = null;
+      p.lastGame = null;
+    }
     setPhase(st, 'reveal', now, BAL.revealS);
     this.dirty = true;
   }

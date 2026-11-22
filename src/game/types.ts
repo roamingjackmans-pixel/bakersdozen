@@ -7,6 +7,8 @@ export type MiniId = 'knead' | 'proof' | 'oven' | 'decorate' | 'scale' | 'rush';
 export type GameId = MiniId | 'dawn';
 export type Style = 'coopetition' | 'coop' | 'ffa' | 'teams';
 export type Length = 'quick' | 'full' | 'long';
+/** how long each mini game runs (the host picks it in the lobby) */
+export type Pace = 'short' | 'normal' | 'long';
 export type AiLevel = 1 | 2 | 3;
 export type ModId =
   | 'midnight'
@@ -104,6 +106,8 @@ export interface PlayerState {
   stats: PlayerStats;
   /** last order's numbers, for the tally screen */
   last: RoundScore | null;
+  /** the latest game's own numbers (a chained order's second count floats these, not the order's total) */
+  lastGame: RoundScore | null;
 }
 
 export interface RoundScore {
@@ -126,6 +130,8 @@ export interface Bakery {
   trayExact: number;
   /** loaves that went on the tray this order, per seat (exact; for the tally dots) */
   trayBy: number[];
+  /** whole loaves already counted onto the tray this order: where the next count starts */
+  counted: number;
   seals: number;
   maxSeals: number;
   closed: boolean;
@@ -170,6 +176,8 @@ export interface CartItem {
 export interface MatchCfg {
   style: Style;
   length: Length;
+  /** mini game length (not the Shared Oven or Dawn, which run until their trays are out); missing = normal */
+  pace?: Pace;
   mods: ModId[];
   aiLevel: AiLevel;
   seed: number;

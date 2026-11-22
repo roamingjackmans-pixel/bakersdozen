@@ -148,7 +148,11 @@ export function runMini(host: HTMLElement, o: RunOpts): { stop(): void; game(): 
   const results: GameResult[] = [];
   const swapAt = o.swapTo ? o.startAt + (o.seconds * 1000) / 2 : 0;
   let swapped = false;
+  /** game time the second game of a Swap Shop started at (halfway, or when the first one's objective was met) */
+  let swapT0 = 0;
   let swapFlash = 0;
+  /** ended because the objective was met, not by the clock */
+  let doneEarly = false;
   const mirror = o.mods.includes('mirror');
   const lights = o.mods.includes('lightsout') || o.twist === 'blackout';
   const storm = o.mods.includes('flourstorm');
@@ -241,9 +245,10 @@ export function runMini(host: HTMLElement, o: RunOpts): { stop(): void; game(): 
   window.addEventListener('keydown', onKey);
   window.addEventListener('keyup', onKey);
 
-  const finish = (): void => {
+  const finish = (early = false): void => {
     if (finished) return;
     finished = true;
+    doneEarly = early;
     results.push(cur().result());
     cur().stop?.();
     let res: GameResult;
@@ -272,9 +277,10 @@ export function runMini(host: HTMLElement, o: RunOpts): { stop(): void; game(): 
     }
     last = now;
     const t = (now - o.startAt) / 1000;
-    // Swap Shop: halfway, the game turns into another one
-    if (swapAt && !swapped && now >= swapAt && !finished) {
+    // Swap Shop: halfway (or as soon as the first game's objective is met), the game turns into another one
+    if (swapAt && !swapped && !finished && (now >= swapAt || (t >= 0 && cur().finished?.()))) {
       swapped = true;
+      swapT0 = Math.max(0, t);
       results.push(cur().result());
       cur().stop?.();
       games = [...games, make(o, o.swapTo!, o.seed ^ 0xbeef)];
@@ -288,8 +294,10 @@ export function runMini(host: HTMLElement, o: RunOpts): { stop(): void; game(): 
       bg = offscreen(W, H, k, (bgc) => (gm.background ? gm.background(bgc) : (bgc.fillStyle = '#2A1A12', bgc.fillRect(0, 0, W, H))));
     }
     if (t >= 0 && !finished) {
-      cur().update(swapped ? t - o.seconds / 2 : t, dt);
-      if (t >= o.seconds || cur().finished?.()) finish();
+      cur().update(swapped ? t - swapT0 : t, dt);
+      if (t >= o.seconds) finish();
+      // the objective is met: nothing left that could raise the score, so the game ends now
+      else if (cur().finished?.() && (!swapAt || swapped)) finish(true);
     }
     // draw
     g.setTransform(1, 0, 0, 1, 0, 0);
@@ -388,7 +396,15 @@ export function runMini(host: HTMLElement, o: RunOpts): { stop(): void; game(): 
     text(gc, (swapped ? GAMES[o.swapTo!] : GAMES[o.game]).name, 260, 40, { size: 30, stroke: 6 });
     text(gc, o.label, 260, 76, { size: 18, font: 'ui', color: '#F3E6CF', stroke: 4 });
     if (o.salted) text(gc, 'Salted', 1060, 40, { size: 22, color: '#FFFDF8', stroke: 5, font: 'ui' });
-    if (left <= 5 && left > 0) {
+    // the objective: bakes done of the bakes asked for (top right, above the rivals)
+    const goal = t >= 0 ? cur().goal?.() : undefined;
+    if (goal && goal[1] > 0) {
+      const [done, need] = goal;
+      rr(gc, 1296, 20, 128, 40, 20);
+      fillInk(gc, done >= need ? '#A8D69F' : '#F3E3C3', 3);
+      text(gc, `${Math.min(done, need)} / ${need}`, 1360, 41, { size: 26, color: INK, font: 'ui' });
+    }
+    if (left <= 5 && left > 0 && !finished) {
       const sec = Math.ceil(left);
       if (sec !== lastCount) {
         lastCount = sec;
@@ -439,7 +455,7 @@ export function runMini(host: HTMLElement, o: RunOpts): { stop(): void; game(): 
     if (finished) {
       gc.fillStyle = 'rgba(20,12,8,0.45)';
       gc.fillRect(0, 0, W, H);
-      text(gc, 'Time', W / 2, H / 2, { size: 130, stroke: 12, color: '#FFF4E0' });
+      text(gc, doneEarly ? 'Done' : 'Time', W / 2, H / 2, { size: 130, stroke: 12, color: doneEarly ? '#FFD166' : '#FFF4E0' });
     }
     void now;
   }

@@ -8,17 +8,33 @@ these tables; `tests/balance.test.ts` holds the targets on every `npm test`. Num
 
 | Row | Survival | Fines / night | Minutes |
 | --- | --- | --- | --- |
-| Co-opetition, Full Dozen, AI Easy | 79% | 1.6 | 20 |
-| Co-opetition, Full Dozen, AI Normal | ~94% | ~1.0 | 22 |
-| Co-opetition, Full Dozen, AI Hard | 100% | 0.1 | 22 |
-| Co-op, Normal | 100% | 0.6 | 22 |
-| Free-for-all, Normal (each bakery) | 85% | 1.5 per bakery | 22 |
-| 2v2, Normal (each bakery) | 95% | 1.1 per bakery | 21 |
-| Strict Inspector, Normal | 86% | 0.7 | 20 |
-| Every chaotic modifier at once | 71% | 1.8 | 19 |
-| Quick Shift / Long Night, Normal | 100% / 100% | 0.5 / 0.4 | 11 / 31 |
+| Co-opetition, Full Dozen, AI Easy | 77% | 1.6 | 19 |
+| Co-opetition, Full Dozen, AI Normal | ~94% | ~1.0 | ~20 |
+| Co-opetition, Full Dozen, AI Hard | 100% | 0.1 | 20 |
+| Co-op, Normal | 100% | 0.6 | 20 |
+| Free-for-all, Normal (each bakery) | 85% | 1.4 per bakery | 20 |
+| 2v2, Normal (each bakery) | 96% | 1.1 per bakery | 20 |
+| Strict Inspector, Normal | 86% | 0.8 | 19 |
+| Every chaotic modifier at once | 72% | 1.8 | 19 |
+| Quick Shift / Long Night, Normal | 100% / 100% | 0.4 / 0.4 | 10 / 31 |
 
-Minutes are AI nights (the market runs its full 20 s); with people pressing Done early a Full Dozen is ~20–25 min.
+Minutes are AI nights (the market runs its full 20 s, every mini game its full clock); the Shared Oven and Dawn
+close once their trays are out, about a minute off a night. With people, a game also ends once everyone has met its
+objective, and the market once everyone presses Done, so a Full Dozen is ~15–25 min. The mini game length (lobby:
+35 / 50 / 70 s) scales the five solo games' clocks and their objectives together, so it changes how long a night
+runs, not the balance.
+
+**Bumper batch** (`bumperAt` 3, `bumperMax` 3): a tray 3+ loaves over the order pays everyone on it +1..+3 ★. It's
+★ only, so survival and fines don't move, and everyone on a shared tray gets the same bonus, so it doesn't change who
+wins in co-opetition. It's earned: a perfect solo game makes 15 of 12 (+3), so a table needs to bake near-perfectly.
+At Normal AI, orders end on average about level (solo games) or 1–2 over (the Shared Oven and Dawn, at any table
+size), and 0–3% of orders pay it; Hard and solo tables earn it more often. The every-chaos row earns it most
+(average ★ +10 a night): chaos nights add loaves to make up for harder games, which AI rivals don't feel.
+
+**Oven loaves** (D34): each oven tray used to round up to a whole loaf, so four bakers' 16 trays made 16 on a 12-loaf
+order, Dawn's 24 made ~25, and an oven in a chain wasn't halved like other chained games (+8 over), whatever the
+table did. Trays now hold their exact share. Survival and fines held (the 13th loaf covers Dawn's new near-misses);
+average ★ came back to where they were before the bumper batch.
 
 The design goals: a Normal table usually survives but loses about one seal a night (the 13th loaf and the Bribe
 matter); a casual table (Easy) survives most nights; nobody should be able to coast at Hard either, which is why

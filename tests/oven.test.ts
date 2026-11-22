@@ -1,7 +1,8 @@
 // The Shared Oven with AI rivals in it: a person must get a turn. AIs pull and reload in the same tick, so without a
 // rule a player waiting with a tray could watch three AIs keep every slot all game.
 import { describe, expect, it } from 'vitest';
-import { aiOven, load, newOven, nextTray, stepOven, type OvenAiMind } from '../src/game/oven';
+import { BAL } from '../src/game/data';
+import { GOLDEN_MULT, aiOven, burnCost, load, newOven, nextTray, stepOven, type OvenAiMind } from '../src/game/oven';
 import { newMatch } from '../src/game/rules';
 import { aiSeats } from '../src/game/sim';
 import type { BakerId, MatchCfg } from '../src/game/types';
@@ -59,5 +60,45 @@ describe('the shared oven', () => {
       if (aiOven(ov, st, minds, now, [1, 2, 3])) loads = ov.trays.filter((t) => t.owner !== 0 && t.st !== 'queue').length;
     }
     expect(loads).toBeGreaterThan(5);
+  });
+});
+
+describe('what the oven puts on the tray', () => {
+  const cfgOf = (length: MatchCfg['length']): MatchCfg => ({ style: 'coopetition', length, mods: [], aiLevel: 2, seed: 7, night: null, daily: null });
+  /** every tray pulled golden: what a perfect oven is worth to the bakery */
+  const perfect = (ov: ReturnType<typeof newOven>): number => ov.trays.reduce((s, t) => s + t.value, 0);
+
+  // each tray used to round up to a whole loaf, so four bakers' 16 trays made 16 loaves on a 12-loaf order (Dawn's 24
+  // made 24), however well they baked; now a perfect oven is worth the same share at any table size
+  for (const n of [1, 2, 3, 4]) {
+    it(`${n} baker${n > 1 ? 's' : ''}: the oven, Dawn and a chained oven make a perfect game's share`, () => {
+      for (const length of ['full', 'long'] as const) {
+        const st = newMatch(cfgOf(length), aiSeats(FOUR.slice(0, n), 2, 'coopetition'), 0);
+        st.orders.forEach((o, i) => {
+          if (!o.games.includes('oven') && !o.games.includes('dawn')) return;
+          st.round = i;
+          const share = o.need * BAL.yieldFactor * BAL.ovenYield * (o.games.length > 1 ? 0.5 : 1);
+          expect(perfect(newOven(st, 0, 60))).toBeCloseTo(share, 6);
+        });
+      }
+    });
+  }
+
+  it("Dawn's golden trays are worth 1.6 of the others, within the share", () => {
+    const st = newMatch(cfgOf('quick'), aiSeats(FOUR, 2, 'coopetition'), 0);
+    st.round = st.orders.length - 1;
+    const ov = newOven(st, 0, 80);
+    const gold = ov.trays.find((t) => t.golden)!;
+    const plain = ov.trays.find((t) => !t.golden && t.owner === gold.owner)!;
+    expect(gold.value / plain.value).toBeCloseTo(GOLDEN_MULT, 6);
+  });
+
+  it('a burnt tray costs a loaf, or what the tray was worth if that is less', () => {
+    const st = newMatch(cfgOf('quick'), aiSeats(FOUR, 2, 'coopetition'), 0);
+    st.round = st.orders.findIndex((o) => o.games.length === 1 && o.games[0] === 'oven');
+    const t = newOven(st, 0, 60).trays[0]!;
+    expect(t.value).toBeLessThan(1);
+    expect(burnCost(t)).toBe(t.value);
+    expect(burnCost({ ...t, value: 3.45 })).toBe(1);
   });
 });

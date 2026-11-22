@@ -1,13 +1,16 @@
 // Decorate: trace the dotted line with the piping bag. Coverage and how close you stay both count; icing off the
-// line costs. Steady Hands widens the margin; Florentine's clean lines score extra (in the rules).
+// line costs. A design is done when its whole line is iced (99%); the game ends once its designs are done. Steady
+// Hands widens the margin; Florentine's clean lines score extra (in the rules).
 // The line shows its way round with little arrows, the start dot pulses, and the glove drags from it until you start
 // (and again from where you left off, if you stop for a while).
 import { audio } from '../audio/audio';
 import type { GameResult } from '../game/types';
-import { Floaters, INK, Particles, circle, cue, ellipse, fillInk, loop, rr, seeded, text, woodBackground, type Live, type MiniEnv, type MiniGame } from './common';
+import { Floaters, INK, Particles, circle, cue, ellipse, fillInk, goalFor, loop, rr, seeded, text, woodBackground, type Live, type MiniEnv, type MiniGame } from './common';
 
 type Pt = [number, number];
 
+/** a design is iced once this much of its line is covered */
+export const DONE_AT = 0.99;
 export const CX = 600;
 export const CY = 410;
 
@@ -244,6 +247,10 @@ export function decorate(env: MiniEnv): MiniGame {
   const icing = ['#FFF8EA', '#F0A8CF', '#A9C2E6', '#FFD166'];
 
   const cur = (): Pattern => pats[pats.length - 1]!;
+  // the objective: this many designs iced (the pace the score asks for); the game ends a beat after the last one
+  const goal = goalFor(env.seconds, 12, 2);
+  const iced = (): number => pats.filter((x) => x.done).length;
+  let after = 0;
   const offset = (i: number, t: number): Pt => {
     const p = cur().pts[i]!;
     if (!env.salted) return p;
@@ -278,7 +285,8 @@ export function decorate(env: MiniEnv): MiniGame {
       lastE = 'miss';
       combo = 0;
     }
-    pats.push(make());
+    if (iced() < goal) pats.push(make());
+    else after = 0.9;
   }
 
   function ink(x: number, y: number, t: number): void {
@@ -300,9 +308,10 @@ export function decorate(env: MiniEnv): MiniGame {
     if (stroke) stroke.push([lx, ly]);
     pipeTick++;
     if (pipeTick % 4 === 0) audio.sfx('pipe', Math.min(1, best / margin));
+    // the design is done only when the line is (all but a stray dot or two): it used to finish at 94%, or at 60% once
+    // you reached the end dot, which on a closed shape is the start dot
     const cov = p.covered.reduce((s, v) => s + v, 0) / p.pts.length;
-    const [ex, ey] = offset(p.pts.length - 1, t);
-    if (cov >= 0.94 || (cov >= 0.6 && Math.hypot(ex - lx, ey - ly) < margin && p.covered[p.pts.length - 1])) {
+    if (cov >= DONE_AT) {
       pressed = false;
       finish(p);
     }
@@ -320,6 +329,7 @@ export function decorate(env: MiniEnv): MiniGame {
       wob = t;
       fx.update(dt);
       fl.update(dt);
+      if (after > 0) after -= dt;
       for (const p of pats) p.slide = Math.max(0, p.slide - dt * 3.2);
       idleT = pressed ? 0 : idleT + dt;
       if (pressed && Math.hypot(px - lastInkX, py - lastInkY) >= 3) {
@@ -394,7 +404,9 @@ export function decorate(env: MiniEnv): MiniGame {
       pressed = false;
     },
     key() {},
-    peek: () => ({ pts: cur().pts, slide: cur().slide, cx: CX, cy: CY, margin }),
+    finished: () => iced() >= goal && after <= 0,
+    goal: () => [iced(), goal],
+    peek: () => ({ pts: cur().pts, slide: cur().slide, cx: CX, cy: CY, margin, covered: cur().covered, done: cur().done }),
     live(): Live {
       const all = pats.filter((x) => x.done);
       const cur2 = scoreOf(cur());
@@ -404,10 +416,10 @@ export function decorate(env: MiniEnv): MiniGame {
     result(): GameResult {
       const all = pats.filter((x) => x.done);
       const c = cur();
-      const partial = c.inkN > 5 ? [scoreOf(c) * 0.8] : [];
+      const partial = !c.done && c.inkN > 5 ? [scoreOf(c) * 0.8] : [];
       const scores = [...all.map((x) => x.score), ...partial];
       const q = scores.length ? scores.reduce((s, v) => s + v, 0) / scores.length : 0;
-      const pace = Math.min(1, (all.length + partial.length * 0.5) / Math.max(2, env.seconds / 12));
+      const pace = Math.min(1, (all.length + partial.length * 0.5) / goal);
       return { q: q * (0.55 + 0.45 * pace), perfect: all.filter((x) => x.score >= 0.85).length };
     },
     stop() {

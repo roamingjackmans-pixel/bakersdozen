@@ -1307,6 +1307,21 @@ input:focus {
   display: flex;
   gap: 3px;
 }
+/* the lobby's rules panel: every option on one line, nothing squeezed (a squeezed row clips its text); a long list
+   of modifiers scrolls instead */
+.lobby-rules {
+  gap: 6px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #8a5a35 transparent;
+}
+.lobby-rules > * {
+  flex-shrink: 0;
+}
+.lobby-rules .seg button {
+  padding: 10px 6px;
+  white-space: nowrap;
+}
 .seat-slots {
   display: grid;
   grid-template-columns: repeat(4, 1fr);

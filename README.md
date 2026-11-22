@@ -27,7 +27,8 @@ comes in for his pretzels, and there is a hearth somewhere in the back of the ba
   he can get caught), Nonna Bea (recipes stay up longer).
 - **Styles:** Co-opetition (shared tray, most ★ wins) · Co-op (one team score, medals) · Free-for-all (your own
   tray and seals; last bakeries standing) · 2v2 Rival Bakeries. **Lengths:** Quick Shift (7, ~12 min), Full Dozen
-  (13, ~25 min), Long Night (13 with two games each, ~35 min).
+  (13, ~25 min), Long Night (13 with two games each, ~35 min). **Mini games** run 35, 50 or 70 s, and end early
+  once you've met their goal (the counter by the clock).
 - **Fourteen modifiers**, tame (Midnight Rush, Strict Inspector, Saffron Shortage, Generous Patrons, Rare Cart,
   Double Shift, Picky Customers) and chaotic (Flour Storm, Mirror Kitchen, Haunted Bakery, Sabotage Night, Swap Shop,
   Lights Out, Tiny Kitchen).
