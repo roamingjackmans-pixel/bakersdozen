@@ -134,6 +134,30 @@ describe('a whole night', () => {
     expect(checked).toBe(3);
   });
 
+  it('the order card can be skipped once every person is ready', () => {
+    let now = 1_000_000;
+    const seats = aiSeats(FOUR, 2, 'coopetition');
+    seats[0] = { ...seats[0]!, ai: false, id: 'me' };
+    seats[2] = { ...seats[2]!, ai: false, id: 'you' };
+    const night = new Night(newMatch(cfg('coopetition', { seed: 23 }), seats, now));
+    expect(night.st.phase).toBe('reveal');
+    const end = night.st.phaseEnd;
+    // a tap carried over from the screen before doesn't count
+    night.ready(0, now + 200);
+    expect(night.st.done).toEqual([]);
+    now += 1000;
+    night.ready(0, now);
+    night.tick(now);
+    expect(night.st.phase).toBe('reveal'); // the other person is still reading
+    night.ready(2, now);
+    night.tick(now);
+    expect(night.st.phase).toBe('play');
+    expect(now).toBeLessThan(end - 5000);
+    // ready means nothing once the card is gone
+    night.ready(0, now + 1000);
+    expect(night.st.done).toEqual([]);
+  });
+
   it('the oven closes a moment after its last tray is out', () => {
     let now = 1_000_000;
     const night = new Night(newMatch(cfg('coopetition', { seed: 31 }), aiSeats(FOUR, 2, 'coopetition'), now));

@@ -283,7 +283,9 @@ export class HostMatch {
         if (m.m && typeof m.m === 'object' && isInt(m.m.item)) err(night.buy(seat, { item: m.m.item, amount: isNum(m.m.amount) ? m.m.amount : undefined, target: isInt(m.m.target) ? m.m.target : undefined, game: typeof m.m.game === 'string' ? m.m.game : undefined }));
         break;
       case 'done':
-        night.marketDone(seat, !!m.v);
+        // on the order card it's "ready" (skip the wait); at the market, Done / back
+        if (night.st.phase === 'reveal') night.ready(seat, n);
+        else night.marketDone(seat, !!m.v);
         break;
       case 'throw':
         if ((m.kind === 'salt' || m.kind === 'flour') && isInt(m.target)) err(night.throwHeld(seat, m.kind, m.target));

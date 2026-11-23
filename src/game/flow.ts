@@ -140,6 +140,16 @@ export class Night {
     return err;
   }
 
+  /** the order card (or a chain's "Then" card): a person has read it. Once every person at an open bakery has, the
+   * game starts without waiting for the clock. A tap in the card's first half second (one meant for the screen
+   * before) doesn't count. */
+  ready(seat: number, now: number): void {
+    const st = this.st;
+    if (st.phase !== 'reveal' || now - st.phaseStart < 500 || st.done.includes(seat)) return;
+    st.done.push(seat);
+    this.dirty = true;
+  }
+
   marketDone(seat: number, v = true): void {
     const st = this.st;
     if (st.phase !== 'market') return;
@@ -192,9 +202,12 @@ export class Night {
     if (st.phase === 'over') return;
     this.runPlan(now);
     switch (st.phase) {
-      case 'reveal':
-        if (now >= st.phaseEnd) this.startPlay(now);
+      case 'reveal': {
+        // everyone has read the card: start now (an AI-only night keeps the clock, as the balance sims do)
+        const humans = this.humanSeats().filter((s) => seatOpen(st, s));
+        if (now >= st.phaseEnd || (humans.length > 0 && humans.every((s) => st.done.includes(s)))) this.startPlay(now);
         break;
+      }
       case 'play':
         this.tickPlay(now);
         break;

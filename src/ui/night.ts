@@ -814,13 +814,16 @@ function renderPhase(st: MatchState): void {
   if (st.phase !== 'play' && changed) els!.status.style.display = 'none';
   els!.emotes.style.display = st.phase === 'play' && c.runner ? 'none' : '';
   if (st.phase === 'reveal') {
-    if (!changed) return;
-    audio.music('bakery');
-    ov.className = 'overlay dim';
-    ov.replaceChildren(st.part > 0 ? nextGameBanner(st) : h('div.row', { style: 'gap:30px;align-items:center' }, bigOrder(st), howTo(order(st).games)));
-    audio.sfx(st.part > 0 ? 'swap' : 'bell');
+    if (changed) {
+      audio.music('bakery');
+      ov.className = 'overlay dim';
+      ov.replaceChildren(st.part > 0 ? nextGameBanner(st) : h('div.row', { style: 'gap:30px;align-items:center' }, bigOrder(st), howTo(order(st).games)));
+      audio.sfx(st.part > 0 ? 'swap' : 'bell');
+    }
+    region('ready', `${pk}:${st.done.join()}`, () => readyBox?.replaceChildren(...readyRow(st, mine)));
     return;
   }
+  delete keys.ready;
   if (st.phase === 'play') {
     if (changed) {
       ov.className = 'overlay';
@@ -939,8 +942,28 @@ function bigOrder(st: MatchState): HTMLElement {
     h('div.row', { style: 'gap:10px;flex-wrap:wrap' }, ...o.games.map((g) => gameChip(g, true))),
     o.twist ? h('div', { style: 'padding:10px 14px;border-radius:12px;background:#A8322D;color:#FFF4E0;font-weight:900;font-size:18px' }, `${TWISTS[o.twist].name}: ${TWISTS[o.twist].rule}`) : '',
     st.cfg.mods.length ? h('div', { style: 'display:flex;flex-wrap:wrap;gap:6px' }, ...st.cfg.mods.map((m) => h('span', { style: 'padding:3px 10px;border-radius:999px;background:#2A1A12;color:#F3E6CF;font-size:13px;font-weight:800' }, MODS.find((x) => x.id === m)!.name))) : '',
-    timerBar(),
+    h('div.row', { style: 'gap:14px' }, h('div.grow', timerBar()), readySlot()),
   );
+}
+
+let readyBox: HTMLElement | null = null;
+
+/** where the order card's Skip / Ready button goes (filled by readyRow as people press it) */
+function readySlot(): HTMLElement {
+  readyBox = h('div.row', { style: 'gap:6px' });
+  return readyBox;
+}
+
+/** Skip (alone) or Ready (with other people): the game starts once every person at an open bakery has pressed it.
+ * The button takes focus, so Enter or Space presses it too. */
+function readyRow(st: MatchState, mine: number): Node[] {
+  const people = st.seats.map((s, i) => (!s.ai && !s.standIn && seatOpen(st, i) ? i : -1)).filter((i) => i >= 0);
+  if (!people.includes(mine)) return [];
+  const done = st.done.includes(mine);
+  const who = people.length > 1 ? people.map((i) => h('span', { title: st.seats[i]!.name, style: `opacity:${st.done.includes(i) ? 1 : 0.35}` }, svg(portrait(st.seats[i]!.baker, 34, st.seats[i]!.cosmetics)))) : [];
+  const btn = h(`button.big${done ? '' : '.primary'}`, { disabled: done, onclick: () => C?.client.send({ t: 'done', v: true }) }, done ? 'Ready ✓' : people.length > 1 ? 'Ready' : 'Skip');
+  if (!done) queueMicrotask(() => btn.focus({ preventScroll: true }));
+  return [...who, btn];
 }
 
 /** how to play the order's mini games: each one's looping demo (the glove showing where and when) */
@@ -955,7 +978,7 @@ function howTo(games: GameId[]): HTMLElement {
 
 function nextGameBanner(st: MatchState): HTMLElement {
   const g = currentGame(st);
-  return h('div.col.pop', { style: 'align-items:center;gap:16px' }, h('span.tag', { style: 'font-size:18px' }, 'Then'), gameChip(g, true), howTo([g]), timerBar('#F2A541', false));
+  return h('div.col.pop', { style: 'align-items:center;gap:16px' }, h('span.tag', { style: 'font-size:18px' }, 'Then'), gameChip(g, true), howTo([g]), h('div.row', { style: 'gap:14px;width:440px' }, h('div.grow', timerBar('#F2A541', false)), readySlot()));
 }
 
 let askBox: HTMLElement | null = null;

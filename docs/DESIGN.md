@@ -10,7 +10,7 @@ this file needs fixing.
 
 | Phase | Length | What happens |
 | --- | --- | --- |
-| reveal | 8 s (10 s first order; 3 s before a chained order's second game) | the order card flips: customer, item, games, Rush, twist |
+| reveal | 8 s (10 s first order; 3 s before a chained order's second game) | the order card flips: customer, item, games, Rush, twist. Skip (alone) or Ready (with people) starts the game once every person at an open bakery has pressed it (Enter / Space too; a tap in the card's first 0.5 s doesn't count) |
 | play | 3 s countdown + 50 s (orders 1–4), 58 s (5–12), 38 s each for a two-game chain, 50 s each on Long Night, 80 s Dawn; Rush ×0.75, Midnight Rush ×0.75; the lobby's mini game length ×0.7 / ×1 / ×1.4 (35 / 50 / 70 s; not the Shared Oven or Dawn) | everyone plays the same game at once; results go to the host; AI results are decided at the start and acted out in the corner (in the two shared games, the Shared Oven and All Hands, AI bakers play on the host). Ends early once every person has met their game's objective, or (the oven) once every tray is out, or (All Hands) once every ticket is served or gone |
 | tally | 4.5 s count · up to 6 s for the 13th loaf · 3.5 s verdict | loaves fill the tray; the Apprentice adds one; Saffron Shipments land; Best in Show; then the 13th-loaf call, then fill or fine. Every game gets its own count: a chained order counts after its first game (the count only), then plays the second, then the full tally |
 | market | 20 s (ends early when every person is done) | the peddler's cart; skipped after a Market Closed twist and after the last order |

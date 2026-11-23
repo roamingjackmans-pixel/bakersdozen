@@ -209,3 +209,10 @@ the others so an Easy table isn't sunk by one kitchen order. The balance report 
 Normal 97% / 0.86 fines, Easy 81%; the last commit had 97% / 0.81 and 77%). AI cooks score ~0.9
 here (they rarely fumble the steps), higher than their ~0.65 in solo games, but they still leave a person their
 share of the loaves.
+
+**D38 — The order card can be skipped (owner, 2026-11-22).** The owner didn't want to sit out the order card's timer
+once they'd read it. The card (and a chain's "Then" card) has a Skip button, Ready when there are other people: the
+game starts once every person at an open bakery has pressed it, else on the clock as before. It reuses the market's
+`done` message and list. An AI-only night keeps the clock, so the balance runs don't change. A tap in the card's first
+half second is ignored (a double tap on the market's Done would skip a card nobody saw). The 3-2-1 stays: it's three
+seconds, and the oven and kitchen start on it.
