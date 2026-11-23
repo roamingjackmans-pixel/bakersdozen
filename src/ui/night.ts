@@ -4,7 +4,7 @@
 // dawn check and the results. Everything is drawn from the host's snapshots; choices go back to the host.
 import { mainMenu, show } from '../app';
 import { audio } from '../audio/audio';
-import { BAKER, BUFFS, CUSTOMER, EMOTES, GAMES, ITEMS, MINI_IDS, MODS, STYLES, TWISTS, ACHIEVEMENTS, COSMETIC, BAL } from '../game/data';
+import { BAKER, BUFFS, CUSTOMER, EMOTES, GAMES, ITEMS, MINI_IDS, MODS, STYLES, TWISTS, ACHIEVEMENTS, COSMETIC, BAL, isShared } from '../game/data';
 import { COUNTDOWN_S } from '../game/flow';
 import { ClientMatch, HostMatch, localPair, soloPlayerId, type GuestMsg, type HostMsg } from '../game/match';
 import { recordNight, dailyScore, type NightExtras, type Unlocks } from '../game/profile';
@@ -675,8 +675,9 @@ function maybeRunGame(st: MatchState): void {
   const o = order(st);
   const seed = hash(`${st.cfg.seed}:${st.round}:${st.part}`);
   let swapTo: GameId | undefined;
-  if (st.cfg.mods.includes('swap') && g !== 'oven' && g !== 'dawn') {
-    const pool = MINI_IDS.filter((x) => x !== g && x !== 'oven');
+  // Swap Shop swaps between games each player runs alone (not the shared oven or kitchen)
+  if (st.cfg.mods.includes('swap') && !isShared(g)) {
+    const pool = MINI_IDS.filter((x) => x !== g && !isShared(x));
     swapTo = pool[seed % pool.length];
   }
   const trayBefore = st.bakeries.map((b) => b.trayExact);
@@ -717,13 +718,25 @@ function maybeRunGame(st: MatchState): void {
             coop: st.cfg.style === 'coop',
           }
         : undefined,
+    kitchen:
+      g === 'kitchen'
+        ? {
+            state: () => c.client.kitchen,
+            hostNow: () => c.client.hostNow(),
+            act: (s) => c.client.send({ t: 'kt', s }),
+            me: mine,
+            seats: st.seats,
+            bakeryOf: (s) => bakeryOf(st, s),
+            need: o.need,
+          }
+        : undefined,
     onLive: (l) => {
       c.client.send({ t: 'pr', l: { ...l, at: 0 } });
       myLive = l;
     },
     onDone: (res) => {
       if (res.geode) c.extras.geode = true;
-      if (g !== 'oven' && g !== 'dawn') {
+      if (!isShared(g)) {
         c.lastResult = { t: 'res', r: st.round, p: st.part, res };
         c.client.send(c.lastResult);
       }
@@ -769,7 +782,7 @@ function showRivals(st: MatchState): void {
   }
   // between games the waiting line shows how many are still baking
   const waiting = st.seats.filter((_, i) => !st.done.includes(i) && seatOpen(st, i)).length;
-  if (!C!.runner && currentGame(st) !== 'oven' && currentGame(st) !== 'dawn') {
+  if (!C!.runner && !isShared(currentGame(st))) {
     els!.status.style.display = '';
     els!.status.textContent = waiting ? `Waiting for ${waiting} baker${waiting > 1 ? 's' : ''}…` : 'Counting…';
   }

@@ -4,19 +4,23 @@
 these tables; `tests/balance.test.ts` holds the targets on every `npm test`. Numbers live in `BAL`
 (`src/game/data.ts`).
 
-## Targets and where they landed (2026-11-21)
+## Targets and where they landed (2026-11-22, nine mini games)
 
 | Row | Survival | Fines / night | Minutes |
 | --- | --- | --- | --- |
-| Co-opetition, Full Dozen, AI Easy | 77% | 1.6 | 19 |
-| Co-opetition, Full Dozen, AI Normal | ~94% | ~1.0 | ~20 |
-| Co-opetition, Full Dozen, AI Hard | 100% | 0.1 | 20 |
-| Co-op, Normal | 100% | 0.6 | 20 |
-| Free-for-all, Normal (each bakery) | 85% | 1.4 per bakery | 20 |
-| 2v2, Normal (each bakery) | 96% | 1.1 per bakery | 20 |
-| Strict Inspector, Normal | 86% | 0.8 | 19 |
-| Every chaotic modifier at once | 72% | 1.8 | 19 |
-| Quick Shift / Long Night, Normal | 100% / 100% | 0.4 / 0.4 | 10 / 31 |
+| Co-opetition, Full Dozen, AI Easy | 81% | 1.6 | 19 |
+| Co-opetition, Full Dozen, AI Normal | 97% | 0.86 | 20 |
+| Co-opetition, Full Dozen, AI Hard | 100% | 0.1 | 21 |
+| Co-op, Normal | 100% | 0.6 | 21 |
+| Free-for-all, Normal (each bakery) | 79% | 1.6 per bakery | 20 |
+| 2v2, Normal (each bakery) | 95% | 1.1 per bakery | 20 |
+| Strict Inspector, Normal | 89% | 0.7 | 20 |
+| Every chaotic modifier at once | 76% | 1.8 | 19 |
+| Quick Shift / Long Night, Normal | 100% / 98% | 0.4 / 0.6 | 10 / 31 |
+
+With the three new games (D35–D37) the Normal row matches the last six-game commit (97%, 0.81) within noise;
+free-for-all bakeries lose a few points (85% → 79%) because a cook alone in All Hands can't share the steps out as a
+table of four can.
 
 Minutes are AI nights (the market runs its full 20 s, every mini game its full clock); the Shared Oven and Dawn
 close once their trays are out, about a minute off a night. With people, a game also ends once everyone has met its
@@ -46,12 +50,15 @@ Win rate per seat (25% is even) and average ★ in four-baker co-opetition, Full
 
 | Baker | Win rate | Avg ★ |
 | --- | --- | --- |
-| Stephanie | 22–26% | 78–80 |
-| Joe | 27–31% | 78–80 |
-| Pip | 15–21% | 76–78 |
-| Florentine | 24–34% | 78–80 |
-| Wick | 13–25% | 74–77 |
-| Nonna Bea | 24–29% | 78–81 |
+| Stephanie | 24% | 75 |
+| Joe | 31% | 76 |
+| Pip | 21% | 74 |
+| Florentine | 25% | 76 |
+| Wick | 18% | 73 |
+| Nonna Bea | 24% | 74 |
+
+(One 400-night run; earlier runs with six games read 22–34% and 74–81 ★. Average ★ are a few lower now: an order
+of Egg Juggle or Fold pays like any solo game, and fewer nights reach Dawn's big ★.)
 
 Average ★ sit within ~4% of each other; win rates spread wider because a night has one winner (a 2% edge in ★ wins
 far more than 2% more nights). Two bakers read low in AI-only nights for a reason that people won't share:
@@ -82,3 +89,16 @@ far more than 2% more nights). Two bakers read low in AI-only nights for a reaso
 `tests/mini.test.ts` plays each game with bots. A perfect bot scores 0.85–1; an idle one 0; mashing Knead every
 frame < 0.2 and twice a beat < 0.55; scribbling over the Decorate cake < 0.25; guessing Rush Order < 0.3; a short
 Scale pour < 0.15. A "decent person" Knead bot (88% of beats, ±65 ms) lands 0.45–0.85, around the AI's Normal.
+Egg Juggle: perfect ~1, mashing both hands every frame < 0.25 (~0.19), a few times a second < 0.45, a decent juggler
+(88% of eggs, ±70 ms) 0.4–0.85. Fold: perfect ~1, 40 px off the middle 0.6–0.9, letting go mid-swing < 0.3, scribbling
+< 0.2. Perfect bots meet the objective a little past halfway (Juggle 28 s of 50, Fold 22 s).
+
+## All Hands (`tests/kitchen.test.ts`)
+
+AI-only kitchens, 50 s, four bakers: Easy serves ~75% of tickets, Normal ~88%, Hard ~97%; free-for-all, where every
+cook works alone, ~70 / 81 / 90%. All served is `need × 1.25 × 0.84` (`kitchenYield`); fewer is that × (share
+served)^0.5. A shared kitchen's result varies less than four separate games, so with AI cooks that played every
+kitchen alike, kitchen orders were never fined (the 13th loaf covered every near miss) and Normal nights all
+survived. Now each AI cook has a form for the game (`kitchenAiForm` 0.35: its reactions, kneads and pulls scale by
+1 ± that), as AI rivals' solo games spread by `aiSpread`, and kitchen orders end about half a loaf short on average. A scripted good player scores > 0.75
+among AI cooks; standing still scores 0; tapping random stations < 0.3.

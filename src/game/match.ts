@@ -2,6 +2,7 @@
 // everyone snapshots; each client (including the host's own) draws them and sends its choices back.
 // Solo and online use the same code path: solo just wires the client straight to the host in the same tab.
 import { Night } from './flow';
+import type { KitchenState } from './kitchen';
 import type { OvenState } from './oven';
 import type { BuyMsg } from './rules';
 import type { GameResult, LiveProgress, MatchState } from './types';
@@ -12,6 +13,7 @@ export const now = (): number => performance.timeOrigin + performance.now();
 export type HostMsg =
   | { t: 'st'; s: MatchState; at: number }
   | { t: 'ov'; o: OvenState; at: number }
+  | { t: 'kt'; k: KitchenState; at: number }
   | { t: 'pr'; p: (LiveProgress | null)[]; at: number }
   | { t: 'pong'; id: number; th: number; to: string }
   | { t: 'err'; to: string; msg: string }
@@ -28,6 +30,8 @@ export type GuestMsg =
   | { t: 'done'; v: boolean }
   | { t: 'throw'; kind: 'salt' | 'flour'; target: number }
   | { t: 'ov'; a: OvenAct }
+  /** All Hands: the station tapped */
+  | { t: 'kt'; s: number }
   | { t: 'pr'; l: LiveProgress }
   | { t: 'emote'; k: string }
   | { t: 'hearth' };
@@ -60,19 +64,22 @@ function ticker(ms: number, fn: () => void): () => void {
 const isInt = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v);
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
-/** what is saved for a refresh: the state, the results already in for this game, and the oven */
+/** what is saved for a refresh: the state, the results already in for this game, and the oven or kitchen */
 interface Saved {
   st: MatchState;
   at: number;
   results?: (GameResult | null)[];
   oven?: OvenState | null;
+  kitchen?: KitchenState | null;
 }
+type Restore = { results?: (GameResult | null)[]; oven?: OvenState | null; kitchen?: KitchenState | null };
 
 export class HostMatch {
   night: Night;
   private stopTick: (() => void) | null = null;
   private lastSt = 0;
   private lastOv = 0;
+  private lastKt = 0;
   private lastPr = 0;
   private lastSave = 0;
   private lastPhase = '';
@@ -86,10 +93,10 @@ export class HostMatch {
     st: MatchState,
     private wire: HostWire | null,
     private saveKey: string,
-    restore?: { results?: (GameResult | null)[]; oven?: OvenState | null },
+    restore?: Restore,
   ) {
     // a resumed night carries what was in flight (see saved())
-    const carried = (st as MatchState & { __restore?: typeof restore }).__restore;
+    const carried = (st as MatchState & { __restore?: Restore }).__restore;
     delete (st as MatchState & { __restore?: unknown }).__restore;
     this.night = new Night(st, restore ?? carried);
     this.prog = st.seats.map(() => null);
@@ -169,6 +176,12 @@ export class HostMatch {
       this.lastOv = n;
       this.send({ t: 'ov', o: night.oven, at: n });
     }
+    // the kitchen: on every change, and often while cooks walk (screens extrapolate their paths in between)
+    if (night.kitchen && (night.kitchenDirty ? n - this.lastKt >= 60 : n - this.lastKt >= 250)) {
+      night.kitchenDirty = false;
+      this.lastKt = n;
+      this.send({ t: 'kt', k: night.kitchen, at: n });
+    }
     if (night.st.phase === 'play' && n - this.lastPr >= 250) {
       this.lastPr = n;
       const p = night.st.seats.map((s, i) => (s.ai || s.standIn ? night.progressOf(i) : this.prog[i] ?? null));
@@ -187,7 +200,7 @@ export class HostMatch {
     this.savedPhase = `${this.st.phase}:${this.st.round}:${this.st.part}:${this.st.tallyStep}`;
     if (this.st.phase === 'over') return;
     try {
-      const d: Saved = { st: this.night.st, at: n, results: this.night.results, oven: this.night.oven };
+      const d: Saved = { st: this.night.st, at: n, results: this.night.results, oven: this.night.oven, kitchen: this.night.kitchen };
       sessionStorage.setItem(SAVE_KEY(this.saveKey), JSON.stringify(d));
     } catch {
       /* full or private */
@@ -195,7 +208,7 @@ export class HostMatch {
   }
 
   /** a saved night (after a refresh), its clocks moved on by the time away */
-  static saved(key: string): (MatchState & { __restore?: { results?: (GameResult | null)[]; oven?: OvenState | null } }) | null {
+  static saved(key: string): (MatchState & { __restore?: Restore }) | null {
     try {
       const raw = sessionStorage.getItem(SAVE_KEY(key));
       if (!raw) return null;
@@ -213,7 +226,18 @@ export class HostMatch {
         if (d.oven.ghostAt) d.oven.ghostAt += shift;
         for (const t of d.oven.trays) if (t.st === 'baking') t.start += shift;
       }
-      return Object.assign(d.st, { __restore: { results: d.results, oven: d.oven } });
+      if (d.kitchen) {
+        const k = d.kitchen;
+        k.start += shift;
+        k.end += shift;
+        k.t += shift;
+        for (const t of k.tickets) {
+          t.at += shift;
+          t.due += shift;
+        }
+        for (const s of k.stations) if (s.start) s.start += shift;
+      }
+      return Object.assign(d.st, { __restore: { results: d.results, oven: d.oven, kitchen: d.kitchen } });
     } catch {
       return null;
     }
@@ -236,6 +260,7 @@ export class HostMatch {
     if (m.t === 'hi') {
       night.dirty = true;
       night.ovenDirty = true;
+      night.kitchenDirty = true;
       this.lastSt = 0;
       return;
     }
@@ -268,6 +293,9 @@ export class HostMatch {
           night.ovenAct(seat, { k: m.a.k, slot: isInt(m.a.slot) ? m.a.slot : undefined, tray: isInt(m.a.tray) ? m.a.tray : undefined, when: isNum(m.a.when) ? m.a.when : undefined }, n);
         }
         break;
+      case 'kt':
+        if (isInt(m.s)) night.kitchenAct(seat, m.s, n);
+        break;
       case 'pr':
         if (m.l && isNum(m.l.v)) this.prog[seat] = { v: Math.max(0, Math.min(1, m.l.v)), c: Math.max(0, Math.min(999, (m.l.c as number) | 0)), e: String(m.l.e || '').slice(0, 10), at: n };
         break;
@@ -290,6 +318,7 @@ type Handler = (data: unknown) => void;
 export class ClientMatch {
   st: MatchState | null = null;
   oven: OvenState | null = null;
+  kitchen: KitchenState | null = null;
   prog: (LiveProgress | null)[] = [];
   /** host clock − local clock (ms) */
   offset = 0;
@@ -364,6 +393,10 @@ export class ClientMatch {
         this.oven = m.o;
         this.emit('oven', m.o);
         break;
+      case 'kt':
+        this.kitchen = m.k;
+        this.emit('kitchen', m.k);
+        break;
       case 'pr':
         this.prog = m.p;
         this.emit('prog', m.p);
@@ -393,7 +426,7 @@ export class ClientMatch {
     }
   }
 
-  on(ev: 'state' | 'oven' | 'prog' | 'error' | 'bye' | 'synced', fn: Handler): () => void {
+  on(ev: 'state' | 'oven' | 'kitchen' | 'prog' | 'error' | 'bye' | 'synced', fn: Handler): () => void {
     if (!this.handlers.has(ev)) this.handlers.set(ev, new Set());
     this.handlers.get(ev)!.add(fn);
     return () => this.handlers.get(ev)?.delete(fn);

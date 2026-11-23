@@ -5,9 +5,14 @@
 // lines up with the real thing underneath.
 import type { GameId } from '../game/types';
 import { PANTRY, pantrySVG, sprite } from '../render/art';
+import { portrait } from '../render/portraits';
 import { stageScale } from '../ui/stage';
 import { INK, blit, board, cue, dough, ellipse, fillInk, loop, pill, rr, text, woodBackground } from './common';
 import { CX as DCX, CY as DCY, cakeBase, guide, pipingBag } from './decorate';
+import { SHAPES, foldBoard, foldRing, grabDot, pretzel } from './fold';
+import { HY, LX, RX, basket, catchRing, closingRing, egg, eggBowl, hand } from './juggle';
+import { cookBody, itemIcon, kitchenFloor } from './kitchen';
+import { LAYOUT } from '../game/kitchen';
 import { CX as KX, CY as KY, R as KR, approachRing, targetRing } from './knead';
 import { OY, PREP, SLOT_W, arch, ovenWall, slotX, trayColor } from './oven';
 import { BX, BY, bowl, riseMark, ruler } from './proof';
@@ -281,6 +286,110 @@ export const DEMOS: Record<GameId, Demo> = {
       word(g, 'Perfect', cx, OY - 30, p, PULL);
     },
   },
+  // an egg arcs from hand to hand; a ring closes onto the hand it drops into and the glove taps as it lands
+  juggle: {
+    box: [260, 150, 920, 518],
+    bg(g) {
+      woodBackground(g);
+      basket(g);
+    },
+    draw(g, time) {
+      const P = 2.6;
+      const p = loop(time, P);
+      // left to right in the first half, back in the second
+      const half = p < 0.5 ? p / 0.5 : (p - 0.5) / 0.5;
+      const from = p < 0.5 ? LX : RX;
+      const to = p < 0.5 ? RX : LX;
+      const x = from + (to - from) * half;
+      const y = HY - 10 - 4 * 330 * half * (1 - half);
+      eggBowl(g, 0.3);
+      hand(g, 'L', '#5E9A58', '#E0A97E', p > 0.96 || p < 0.04 ? 10 : 0);
+      hand(g, 'R', '#5E9A58', '#E0A97E', Math.abs(p - 0.5) < 0.04 ? 10 : 0);
+      catchRing(g, 'L', p > 0.97 || p < 0.03 ? 1 : 0);
+      catchRing(g, 'R', Math.abs(p - 0.5) < 0.03 ? 1 : 0);
+      if (half > 0.55) closingRing(g, to === RX ? 'R' : 'L', (1 - half) / 0.45);
+      egg(g, x, y, time * 5, 2);
+      const land = to === RX ? 'R' : 'L';
+      cue(g, land === 'R' ? RX : LX, HY + 4, 'tap', Math.min(0.999, 0.5 - (1 - half) * 0.6), { label: land === 'R' ? 'TAP · J' : 'TAP · F' });
+      word(g, 'Perfect', land === 'R' ? LX : RX, HY - 90, half, 0.02);
+    },
+  },
+  // grab the green end of the dough, drag it to the gold ring, let go on it
+  fold: {
+    box: [280, 130, 880, 495],
+    bg: foldBoard,
+    draw(g, time) {
+      const P = 2.8;
+      const p = loop(time, P);
+      const m = SHAPES.pretzel[0]!;
+      const DRAG0 = 0.12;
+      const DRAG1 = 0.62;
+      const LET = 0.74;
+      const k = p < DRAG0 ? 0 : p < DRAG1 ? ease((p - DRAG0) / (DRAG1 - DRAG0)) : 1;
+      // the end trails the finger and swings a little past before it settles
+      const swing = p > DRAG1 && p < LET ? Math.sin(((p - DRAG1) / (LET - DRAG1)) * Math.PI * 2) * 14 * (1 - (p - DRAG1) / (LET - DRAG1)) : 0;
+      const e1: [number, number] = [m.from[0] + (m.to[0] - m.from[0]) * k + swing, m.from[1] + (m.to[1] - m.from[1]) * k + swing * 0.6];
+      pretzel(g, e1, [1020, 250]);
+      foldRing(g, m.to[0], m.to[1], 36, p > DRAG1, time);
+      if (p < DRAG0) {
+        grabDot(g, m.from[0], m.from[1], time);
+        cue(g, m.from[0], m.from[1], 'tap', (p / DRAG0) * 0.5, { label: 'DRAG' });
+      } else if (p < LET) cue(g, e1[0], e1[1], 'press', 0, { label: p > DRAG1 + 0.06 ? 'LET GO' : 'DRAG' });
+      else cue(g, e1[0], e1[1], 'release', 0.3 + ((p - LET) / (1 - LET)) * 0.7);
+      word(g, 'Perfect', m.to[0], m.to[1] - 60, p, LET + 0.01);
+    },
+  },
+  // a cook walks flour → mixer → board (three kneads) → oven → hatch, the glove tapping each station as it goes
+  kitchen: (() => {
+    const at = (i: number): [number, number] => [LAYOUT[i]!.sx, LAYOUT[i]!.sy];
+    // station index, the moment the glove taps it, what the cook carries after, its label
+    const stops: [number, number, string | null, string][] = [
+      [0, 0.04, 'flour', 'FLOUR'],
+      [1, 0.2, 'dough', 'MIX'],
+      [6, 0.38, 'shaped', 'KNEAD'],
+      [3, 0.56, null, 'BAKE'],
+      [3, 0.72, 'loaf', 'PULL'],
+      [9, 0.9, null, 'SERVE'],
+    ];
+    return {
+      box: [120, 90, 1280, 720],
+      bg: kitchenFloor,
+      draw(g, time) {
+        const P = 9;
+        const p = loop(time, P);
+        let i = stops.findIndex((s) => p < s[1]);
+        if (i < 0) i = stops.length;
+        const prev = stops[Math.max(0, i - 1)]!;
+        const next = stops[Math.min(stops.length - 1, i)]!;
+        const a = i === 0 ? at(9) : at(prev[0]);
+        const b = at(next[0]);
+        const t0 = i === 0 ? 0 : prev[1] + 0.03;
+        const k = i >= stops.length ? 1 : Math.max(0, Math.min(1, (p - t0) / Math.max(0.01, next[1] - 0.02 - t0)));
+        const x = a[0] + (b[0] - a[0]) * ease(k);
+        const y = a[1] + (b[1] - a[1]) * ease(k);
+        const hold = i === 0 ? null : (prev[2] as Parameters<typeof itemIcon>[1] | null);
+        // what's in the oven between BAKE and PULL
+        const ov = LAYOUT[3]!;
+        if (p >= 0.56 && p < 0.72) {
+          const lv = (p - 0.56) / 0.16;
+          ellipse(g, ov.x + ov.w / 2, ov.y + ov.h / 2 - 4, 30, 17, lv < 0.7 ? '#EFCB86' : '#E9A54A', 3);
+        }
+        const st = LAYOUT[next[0]]!;
+        if (i < stops.length) {
+          g.globalAlpha = 0.6 + 0.4 * Math.sin(time * 6);
+          g.strokeStyle = '#FFD166';
+          g.lineWidth = 6;
+          rr(g, st.x - 6, st.y - 6, st.w + 12, st.h + 12, 16);
+          g.stroke();
+          g.globalAlpha = 1;
+          const below = st.k === 'mixer' || st.k === 'oven';
+          pill(g, next[3], st.x + st.w / 2, below ? st.y + st.h + 26 : st.y - 22, 20);
+          if (k >= 0.92 || i === 0) cue(g, st.x + st.w / 2, st.y + st.h / 2, 'tap', loop(time, 0.6), { above: !below, s: 0.8 });
+        }
+        cookBody(g, x, y, '#5E9A58', sprite('face-pip-demo', portrait('pip', 64, undefined, { ring: false })), (hold as never) ?? null, true, time, k > 0 && k < 1);
+      },
+    };
+  })(),
   // Dawn: knead your tray on the prep board (three taps), load it, pull it when gold
   dawn: {
     box: [60, 236, 980, 551],

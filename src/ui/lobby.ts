@@ -10,7 +10,7 @@ import { cosmeticsFor, today } from '../game/profile';
 import { hash } from '../game/rng';
 import { newMatch } from '../game/rules';
 import { save, session } from '../game/session';
-import type { AiLevel, BakerId, Cosmetics, Length, MatchCfg, ModId, Pace, Seat, Style } from '../game/types';
+import type { AiLevel, BakerId, Cosmetics, GameId, Length, MatchCfg, ModId, Pace, Seat, Style } from '../game/types';
 import { api, type FriendsView } from '../net/api';
 import { Net, type RoomView } from '../net/socket';
 import { GAME_ICONS, LOAF13, itemSVG, lineIcon } from '../render/art';
@@ -534,7 +534,7 @@ export function resumeIfAny(): boolean {
 
 function skillRow(label: string, n: number, color: string): HTMLElement[] {
   const loaves = h('div.loaves');
-  for (let i = 0; i < 5; i++) loaves.appendChild(svg(LOAF13(26), i < n ? '' : 'off')).setAttribute('style', i < n ? '' : 'opacity:0.2;filter:grayscale(1)');
+  for (let i = 0; i < 5; i++) loaves.appendChild(svg(LOAF13(22), i < n ? '' : 'off')).setAttribute('style', i < n ? '' : 'opacity:0.2;filter:grayscale(1)');
   return [h('span', { style: `color:${n >= 4 ? color : n <= 2 ? '#F2A08C' : '#F3E6CF'}` }, label), loaves];
 }
 
@@ -860,6 +860,9 @@ async function startNight(): Promise<void> {
   const locked = L.mode === 'campaign' || L.mode === 'daily';
   const cfg: MatchCfg = { style: L.style, length: L.length, pace: locked ? 'normal' : (L.pace ?? 'normal'), mods: L.mods, aiLevel: L.aiLevel, seed, night: L.night, daily: L.daily };
   const st = newMatch(cfg, seats, performance.timeOrigin + performance.now());
+  // dev: ?games=kitchen (or fold+juggle) makes every order before Dawn play those games
+  const devGames = import.meta.env.DEV ? new URLSearchParams(location.search).get('games') : null;
+  if (devGames) for (const o of st.orders.slice(0, -1)) o.games = devGames.split('+') as GameId[];
   audio.sfx('bell');
   inLobbyScreen = false;
   if (L.mode === 'online' && net) {

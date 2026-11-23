@@ -4,6 +4,7 @@
 // their results and choices in. The sim tests drive the same class with a fake clock.
 import { aiResult, aiShopping, aiWantsThirteenth, sabotageTarget } from './ai';
 import { BAL } from './data';
+import { aiKitchen, kitchenAct, kitchenDone, kitchenResults, newKitchen, stepKitchen, type KitchenAiMind, type KitchenState } from './kitchen';
 import { aiOven, bump, closeOven, load, newOven, ovenResults, prep, pull, stepOven, type OvenAiMind, type OvenState } from './oven';
 import { Rng, clamp } from './rng';
 import {
@@ -33,14 +34,17 @@ import type { GameResult, LiveProgress, MatchState } from './types';
 
 /** seconds of "3, 2, 1" before each game starts (included in the play phase) */
 export const COUNTDOWN_S = 3;
-/** ms the oven stays open after its last tray comes out */
+/** ms the oven stays open after its last tray comes out (and the kitchen after its last ticket) */
 export const OVEN_LINGER_MS = 1000;
 
 export class Night {
   st: MatchState;
   oven: OvenState | null = null;
+  /** All Hands: the shared kitchen while it's on */
+  kitchen: KitchenState | null = null;
   results: (GameResult | null)[];
   private minds = new Map<number, OvenAiMind>();
+  private kminds = new Map<number, KitchenAiMind>();
   /** AI choices scheduled at host times this phase: [when, seat, what] */
   private plan: { at: number; seat: number; act: () => void }[] = [];
   /** AI live progress (what their corner portrait shows) */
@@ -48,14 +52,18 @@ export class Night {
   /** bumped when the state changed in a way guests must see */
   dirty = true;
   ovenDirty = false;
+  kitchenDirty = false;
   private planned = '';
 
-  constructor(st: MatchState, restore?: { results?: (GameResult | null)[]; oven?: OvenState | null }) {
+  constructor(st: MatchState, restore?: { results?: (GameResult | null)[]; oven?: OvenState | null; kitchen?: KitchenState | null }) {
     this.st = st;
     this.results = restore?.results && restore.results.length === st.seats.length ? restore.results : st.seats.map(() => null);
     if (st.phase === 'play' && (currentGame(st) === 'oven' || currentGame(st) === 'dawn')) {
       // resumed mid-oven after a refresh: the saved oven, or a fresh one for what's left of the clock
       this.oven = restore?.oven && restore.oven.round === st.round ? restore.oven : newOven(st, st.phaseStart + COUNTDOWN_S * 1000, (st.phaseEnd - st.phaseStart) / 1000 - COUNTDOWN_S);
+    }
+    if (st.phase === 'play' && currentGame(st) === 'kitchen') {
+      this.kitchen = restore?.kitchen && restore.kitchen.round === st.round ? restore.kitchen : newKitchen(st, st.phaseStart + COUNTDOWN_S * 1000, (st.phaseEnd - st.phaseStart) / 1000 - COUNTDOWN_S);
     }
   }
 
@@ -73,7 +81,7 @@ export class Night {
       saveRng(st, r);
     }
     if (st.phase === 'market') this.planMarket(now);
-    if (st.phase === 'play' && !this.oven) {
+    if (st.phase === 'play' && !this.oven && !this.kitchen) {
       const r = this.rng();
       const g = currentGame(st);
       for (const seat of this.aiSeats()) {
@@ -103,7 +111,7 @@ export class Night {
   submit(seat: number, round: number, part: number, res: GameResult): void {
     const st = this.st;
     if (st.phase !== 'play' || st.round !== round || st.part !== part) return;
-    if (this.oven) return; // the oven scores itself
+    if (this.oven || this.kitchen) return; // the oven and the kitchen score themselves
     if (this.results[seat]) return;
     this.results[seat] = { ...res, q: clamp(Number(res.q) || 0, 0, 1) };
     if (!st.done.includes(seat)) st.done.push(seat);
@@ -156,6 +164,13 @@ export class Night {
       if (ok && ov.game === 'dawn' && owner >= 0 && this.st.players[owner]!.stars === Math.max(...this.st.players.map((p) => p.stars))) this.st.players[seat]!.stats.saltLeader = true;
     }
     if (ok) this.ovenDirty = true;
+  }
+
+  /** All Hands: a seat tapped a station */
+  kitchenAct(seat: number, sid: number, now: number): void {
+    const k = this.kitchen;
+    if (!k || this.st.phase !== 'play') return;
+    if (kitchenAct(k, this.st, seat, sid, now)) this.kitchenDirty = true;
   }
 
   lightHearth(): void {
@@ -221,12 +236,17 @@ export class Night {
     const r = this.rng();
     // sabotage lands: a Flour Cloud bursts at a random moment of the victim's game
     for (const p of st.players) if (p.flourAt) p.flourAt = now + COUNTDOWN_S * 1000 + Math.round(r.range(4, Math.max(5, secs - 6)) * 1000);
+    this.oven = null;
+    this.kitchen = null;
     if (g === 'oven' || g === 'dawn') {
       this.oven = newOven(st, now + COUNTDOWN_S * 1000, secs);
       this.minds.clear();
       this.ovenDirty = true;
+    } else if (g === 'kitchen') {
+      this.kitchen = newKitchen(st, now + COUNTDOWN_S * 1000, secs);
+      this.kminds.clear();
+      this.kitchenDirty = true;
     } else {
-      this.oven = null;
       // AI results are decided now; their portraits act it out over the game
       for (const seat of this.aiSeats()) {
         if (!seatOpen(st, seat)) continue;
@@ -261,6 +281,23 @@ export class Night {
       }
       return;
     }
+    const kt = this.kitchen;
+    if (kt) {
+      if (stepKitchen(kt, st, now)) this.kitchenDirty = true;
+      if (aiKitchen(kt, st, this.kminds, now, this.aiSeats())) this.kitchenDirty = true;
+      // every ticket is served or gone: the kitchen closes a moment later
+      if (now + OVEN_LINGER_MS < kt.end && kitchenDone(kt)) {
+        kt.end = now + OVEN_LINGER_MS;
+        this.kitchenDirty = true;
+      }
+      if (now >= kt.end) {
+        const res = kitchenResults(kt, st);
+        res.forEach((r, seat) => seatOpen(st, seat) && scoreResult(st, seat, r));
+        this.kitchenDirty = true;
+        this.afterGame(now);
+      }
+      return;
+    }
     this.fakeAiProgress(now);
     const humans = this.humanSeats().filter((s) => seatOpen(st, s));
     const humansIn = humans.every((s) => this.results[s]);
@@ -291,6 +328,7 @@ export class Night {
   private afterGame(now: number): void {
     const st = this.st;
     this.oven = null;
+    this.kitchen = null;
     setPhase(st, 'tally', now, BAL.tallyCountS);
     st.tallyStep = 0;
     if (!this.chainGoesOn()) beginTally(st);

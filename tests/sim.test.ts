@@ -1,6 +1,6 @@
 // Every style, length and modifier plays a whole night to dawn without breaking the rules' invariants.
 import { describe, expect, it } from 'vitest';
-import { MODS } from '../src/game/data';
+import { MODS, isShared } from '../src/game/data';
 import { Night, OVEN_LINGER_MS } from '../src/game/flow';
 import { bumperStars, gameSeconds, newMatch, settleOrder } from '../src/game/rules';
 import { aiSeats, simulateNight } from '../src/game/sim';
@@ -121,7 +121,7 @@ describe('a whole night', () => {
       night.tick(now);
       const s = night.st;
       const g = s.orders[s.round]!.games[s.part]!;
-      if (s.phase !== 'play' || g === 'oven' || g === 'dawn' || now < s.phaseStart + 4000) continue;
+      if (s.phase !== 'play' || isShared(g) || now < s.phaseStart + 4000) continue;
       // the person meets their game's objective 1 s into play: the night moves on without waiting for the clock
       const end = s.phaseEnd;
       night.submit(0, s.round, s.part, { q: 0.8 });

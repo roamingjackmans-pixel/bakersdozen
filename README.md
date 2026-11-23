@@ -15,9 +15,12 @@ comes in for his pretzels, and there is a hearth somewhere in the back of the ba
   everyone plays the same mini game at once (rivals' progress in the corner), the tally fills the shared tray, one
   baker may bake the 13th loaf, and the peddler's cart sells buffs for Tips. The window is the clock: midnight to
   sunrise, the Inspector's lantern walking up the road.
-- **Six mini games:** Knead (tap as each ring hits the dough), Proof (hold to rise, let go before it collapses), Shared Oven (load,
+- **Nine mini games:** Knead (tap as each ring hits the dough), Proof (hold to rise, let go before it collapses), Shared Oven (load,
   pull golden trays, rescue a rival's or let it burn), Decorate (trace the line), Scale (pour to the gram), Rush Order
-  (remember the recipe). The last order, Dawn, runs every station at once in the Shared Oven. Every game shows where
+  (remember the recipe), Egg Juggle (tap a hand as an egg drops into it; three catches and it goes in the bowl), Fold
+  (drag the springy ends of pretzels and croissants onto their rings) and All Hands (everyone's baker in one kitchen:
+  flour, mixer, board, oven, hatch, against the tickets' clocks). The last order, Dawn, runs every station at once in
+  the Shared Oven. Every game shows where
   and when to act without sound: a looping demo beside the order card and in the 3-2-1, and a glove on the spot while
   you play.
 - **The 13th loaf:** after the count, anyone with Saffron can bake it (+5 ★); it covers an order one short. Never bake
@@ -60,14 +63,16 @@ idle, mashing, scribbling), holds the balance targets, and (with ..\Shoallhell p
 through the real server. `npm run balance` prints the balance report (docs/BALANCE.md).
 
 Dev shortcuts: `?fast=0.3` runs every clock at 30% speed; `?mini=decorate&baker=florentine&mods=mirror` plays one
-mini game on its own (`knead`, `proof`, `decorate`, `scale`, `rush`); `?slot=2` keeps a second sign-in for testing
+mini game on its own (`knead`, `proof`, `decorate`, `scale`, `rush`, `juggle`, `fold`, or `kitchen` with AI cooks);
+`?games=kitchen` (or `fold+juggle`) makes every order before Dawn play those games; `?slot=2` keeps a second sign-in for testing
 two accounts in two tabs.
 
 ## How it's built
 
-- `src/game/` — the rules (plain-JSON state, seeded RNG), the night's phase machine, the Shared Oven, AI rivals, the
+- `src/game/` — the rules (plain-JSON state, seeded RNG), the night's phase machine, the Shared Oven and the All Hands
+  kitchen (the two games the host runs for the whole table), AI rivals, the
   host/client match controllers, profiles and achievements.
-- `src/mini/` — the six mini games on a canvas, and the runner that layers modifiers and sabotage over them.
+- `src/mini/` — the nine mini games on a canvas, and the runner that layers modifiers and sabotage over them.
 - `src/ui/` — every screen (DOM + SVG, from the mockups), `src/render/` — the storybook art, `src/audio/` — synthesized
   sound and music, `src/net/` — accounts and the socket to Shoallhell's server.
 - Design and history: `docs/DESIGN.md`, `docs/DECISIONS.md`, `docs/BALANCE.md`.

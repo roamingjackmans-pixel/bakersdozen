@@ -11,7 +11,7 @@ this file needs fixing.
 | Phase | Length | What happens |
 | --- | --- | --- |
 | reveal | 8 s (10 s first order; 3 s before a chained order's second game) | the order card flips: customer, item, games, Rush, twist |
-| play | 3 s countdown + 50 s (orders 1–4), 58 s (5–12), 38 s each for a two-game chain, 50 s each on Long Night, 80 s Dawn; Rush ×0.75, Midnight Rush ×0.75; the lobby's mini game length ×0.7 / ×1 / ×1.4 (35 / 50 / 70 s; not the Shared Oven or Dawn) | everyone plays the same game at once; results go to the host; AI results are decided at the start and acted out in the corner. Ends early once every person has met their game's objective, or (the oven) once every tray is out |
+| play | 3 s countdown + 50 s (orders 1–4), 58 s (5–12), 38 s each for a two-game chain, 50 s each on Long Night, 80 s Dawn; Rush ×0.75, Midnight Rush ×0.75; the lobby's mini game length ×0.7 / ×1 / ×1.4 (35 / 50 / 70 s; not the Shared Oven or Dawn) | everyone plays the same game at once; results go to the host; AI results are decided at the start and acted out in the corner (in the two shared games, the Shared Oven and All Hands, AI bakers play on the host). Ends early once every person has met their game's objective, or (the oven) once every tray is out, or (All Hands) once every ticket is served or gone |
 | tally | 4.5 s count · up to 6 s for the 13th loaf · 3.5 s verdict | loaves fill the tray; the Apprentice adds one; Saffron Shipments land; Best in Show; then the 13th-loaf call, then fill or fine. Every game gets its own count: a chained order counts after its first game (the count only), then plays the second, then the full tally |
 | market | 20 s (ends early when every person is done) | the peddler's cart; skipped after a Market Closed twist and after the last order |
 | dawncheck | 7 s | the Inspector's verdict |
@@ -20,8 +20,10 @@ this file needs fixing.
 A night ends early when the shared bakery closes (three cracked seals), or in free-for-all / 2v2 when one bakery is
 left standing.
 
-**Orders** (`makeOrders`): orders 1–4 teach four different games (always including the Shared Oven); from order 5 a
-twist is drawn with probability 55% (campaign: 25% + 5.5% a night; daily: 65%), and some orders chain two games. The
+**Orders** (`makeOrders`): orders 1–4 teach four different games (always including the Shared Oven, never All Hands); from order 5 a
+twist is drawn with probability 55% (campaign: 25% + 5.5% a night; daily: 65%), and some orders chain two games (a
+shared game is always a chain's second). Each item prefers three games (`ITEMS`: Croissants and Pretzels Fold, Honey
+Buns and Shortbread Egg Juggle, the bread loaves All Hands); the least-played game comes first. The
 last order is Dawn. The Sheriff comes by every few orders.
 
 **Twists:** Rush, Double Bake, Short Weight (plain bakes put nothing on the tray), Spot Check (tray needs 13), Market
@@ -93,6 +95,9 @@ everyone a free shaker and cloud each order and nobody is caught.
 | Decorate | drag the piping bag | coverage × (1 − 1.4 off-line ink) × precision × pace | 1 design per 12 s (≥ 2); a design is done at 99% of its line | wider margin | the guide drifts |
 | Scale | hold to pour, Weigh | closeness to the target (±22%) × pace | 1 weigh per 8 s (≥ 3) | steadier needle | a digit of the target smudges |
 | Rush Order | tap / 1-8 in order | items right ÷ items shown (longer recipes count more, up to the goal) | a recipe of 6 right in a 50 s game (4–7, by the clock) | longer look | the shelves shuffle after the look |
+| Egg Juggle | tap the hand (or F / J) as an egg lands in it | (perfect + 0.7 good) ÷ (catches + drops + 0.8 × fumbles) × pace | eggs in the bowl: 1 per 3.6 s (≥ 5); an egg needs 3 catches | wider catch windows (±55 / ±150 ms at skill 3) | narrower windows; the eggs wobble |
+| Fold | drag a dough end onto its ring, let go | mean move score (1 in the ring's middle, down to 0.3 at its edge) ÷ (moves + 0.5 × spring-backs) × pace | 1 pastry per 8 s (≥ 3); a pretzel is 2 moves, a croissant 3 | bigger rings | bouncier dough |
+| All Hands | tap a station (your cook walks there and uses it; tap the board to knead) | your share of the work × (0.55 + 0.45 × your bakery's tickets served) | every ticket served or gone | wider golden window, quicker feet | — |
 
 **Objectives** (`goalFor` in `src/mini/common.ts`; `finished()` / `goal()` on each game). The endless games' objective
 is the pace their score already asks for, so once it's met nothing more could raise the score: the game stops
@@ -106,6 +111,23 @@ trays from start times on the host clock. Pulls are judged at the moment the pla
 up to 260 ms back). Perfect zone ±240 ms; Joe's parry ±70 ms. Burnt trays take a loaf off the owner's tray (or what
 the tray was worth, if less). Dawn adds a prep board (knead 3 taps before a tray can go in), 6 trays each, 2 extra
 slots and golden trays worth ×1.6 of the others.
+
+**All Hands** (`src/game/kitchen.ts`, `src/mini/kitchen.ts`) is the other shared game: everyone's baker on one kitchen
+floor, seen from above, with a flour bin, two mixers, two boards, a counter, three ovens and the hatch. Tap a station
+and your cook walks there (round the island; cooks bump each other aside) and uses it: take flour (or put it back),
+into a free mixer (2.2 s), the dough onto a board, three taps to knead it, into an oven (4.6 s, then a golden window
+of 2.6 s × skill, then 2.2 s smoking: a dark loaf, then burnt), out through the hatch. A loaf belongs to the bakery
+of whoever took its flour; served, it fills that bakery's oldest ticket. Each bakery gets about one ticket per baker
+for every 12.5 s of the clock after the first 14 (`kitchenTicketS`, `kitchenStartS`; at least bakers + 1), arriving
+over the first 55% of the game; a ticket waits half the clock (18–32 s; ×1.3 for a bakery of one, ×1.15 for two).
+All of a bakery's tickets served is `need × 1.25 × 0.84` loaves (`kitchenYield`); fewer is that × (share served)^0.5,
+the solo games' forgiving curve, so one jam doesn't sink the order. The loaves are split between the bakery's bakers by
+the work each did (every step of a loaf counts; a whole loaf is 9), and q is your work ÷ your share × (0.55 + 0.45 ×
+share served). AI cooks walk the same floor with reaction times and late pulls by level (and a form for the game,
+`kitchenAiForm`), leave alone a station someone
+is heading for, start no more than their share of loaves until halfway, and put flour back when both mixers are full.
+The station you need next glows with its label (FLOUR, MIX, KNEAD, BAKE, PULL, SERVE, TAKE) and the glove taps it for
+your first loaf and whenever you stand idle.
 **Oven loaves:** a baker's trays share their part of the order like any game's: all golden, they make
 `need ÷ bakers on the tray × 1.25 × 0.92` (`BAL.ovenYield`), halved when the oven is one game of a chain, with Dawn's
 golden trays weighted ×1.6 inside that share. Each tray holds its exact share (0.86 loaves at a four-baker table)
@@ -139,7 +161,9 @@ game becomes another; q is the average), Lights Out / Blackout (a candle-lit cir
 
 - The lobby host's browser runs the `Night`; the server only relays (`host:msg` to the room, `guest:msg` to the host).
 - The host sends the whole `MatchState` when it changes (≥ 80 ms apart), the oven when it changes (≥ 60 ms, and
-  every 500 ms), and everyone's live progress 4× a second. Each guest measures its clock offset with pings (best of
+  every 500 ms), the All Hands kitchen when it changes (≥ 60 ms, and every 250 ms; screens carry each cook along its
+  path on the host clock in between), and everyone's live progress 4× a second. Guests send the station they tap
+  (`{t:'kt', s}`). Each guest measures its clock offset with pings (best of
   the fastest round trips) and starts each game from the host's phase start.
 - The host ticks from a Worker timer, so a host in a background tab keeps the night moving.
 - A guest who drops is played by an AI stand-in until they rejoin; one who leaves for good becomes an AI rival.

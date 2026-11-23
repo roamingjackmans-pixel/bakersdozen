@@ -1,18 +1,28 @@
 // Content as data: bakers, mini games, buffs, customers, twists, modifiers, achievements, cosmetics.
 // Every balance number lives in BAL so a balance pass changes one place (docs/BALANCE.md explains them).
-import type { BakerId, BuffId, GameId, Length, MiniId, ModId, Pace, Style, TwistId } from './types';
+import type { BakerId, BuffId, GameId, Length, MiniId, ModId, Pace, SharedGame, Style, TwistId } from './types';
 
 export const BAL = {
   /** ★ a perfect game is worth (before Rush, buffs and the game's weight) */
   starsPerGame: 6,
   /** Decorate is the biggest ★ source */
-  gameWeight: { knead: 1, proof: 1, oven: 1.0, decorate: 1.3, scale: 1, rush: 1, dawn: 1.6 } as Record<GameId, number>,
+  gameWeight: { knead: 1, proof: 1, oven: 1.0, decorate: 1.3, scale: 1, rush: 1, juggle: 1, fold: 1, kitchen: 1, dawn: 1.6 } as Record<GameId, number>,
   /** tray loaves a perfect game makes, as a share of 12 / bakers on that tray */
   yieldFactor: 1.25,
   /** loaves = q^yieldCurve × share: under 1 so a casual table can still fill a tray */
   yieldCurve: 0.5,
   /** the Shared Oven's trays share this much of a perfect game's loaves between them (Dawn's golden trays are ×1.6) */
   ovenYield: 0.92,
+  /** All Hands: every ticket served makes this share of a perfect game's loaves (served share ^ yieldCurve of it) */
+  kitchenYield: 0.84,
+  /** All Hands: one ticket per seat for every this many seconds of the game after the first loaf's start-up
+   * (kitchenStartS): a four-baker table at Normal AI serves about 90% of them */
+  kitchenTicketS: 12.5,
+  kitchenStartS: 14,
+  /** All Hands: how much an AI cook's pace varies game to game (its form; the solo games have aiSpread) */
+  kitchenAiForm: 0.35,
+  /** All Hands: a ticket waits this share of the game's clock before the customer leaves (18-32 s) */
+  kitchenTicketLife: 0.5,
   /** how much an AI rival's bakes vary game to game (people are streaky) */
   aiSpread: 0.2,
   /** each chaotic modifier on makes the trays this much easier to fill */
@@ -83,7 +93,7 @@ export const BAKERS: BakerDef[] = [
     title: 'The Strategist',
     perk: 'Sees the next order one round early.',
     weakness: 'Weaker at Knead.',
-    skills: { knead: 2, proof: 3, oven: 3, decorate: 3, scale: 5, rush: 4 },
+    skills: { knead: 2, proof: 3, oven: 3, decorate: 3, scale: 5, rush: 4, juggle: 3, fold: 3, kitchen: 4 },
     coat: '#C8553D',
     light: '#F2A08C',
     tint: '#4A2A20',
@@ -99,7 +109,7 @@ export const BAKERS: BakerDef[] = [
     title: 'The Dungeon Baker',
     perk: 'Parry: a perfectly timed oven pull scores double ★.',
     weakness: 'Weaker at Decorate.',
-    skills: { knead: 3, proof: 3, oven: 5, decorate: 2, scale: 3, rush: 3 },
+    skills: { knead: 3, proof: 3, oven: 5, decorate: 2, scale: 3, rush: 3, juggle: 4, fold: 3, kitchen: 3 },
     coat: '#5B7BA6',
     light: '#A9C2E6',
     tint: '#1F2A3A',
@@ -115,7 +125,7 @@ export const BAKERS: BakerDef[] = [
     title: 'The Apprentice',
     perk: 'Market buffs cost 20% less.',
     weakness: 'No skill bonuses.',
-    skills: { knead: 3, proof: 3, oven: 3, decorate: 3, scale: 3, rush: 3 },
+    skills: { knead: 3, proof: 3, oven: 3, decorate: 3, scale: 3, rush: 3, juggle: 3, fold: 3, kitchen: 3 },
     coat: '#5E9A58',
     light: '#A8D69F',
     tint: '#26361F',
@@ -131,7 +141,7 @@ export const BAKERS: BakerDef[] = [
     title: 'The Pâtissier',
     perk: 'Clean lines score extra in Decorate.',
     weakness: 'Plain bakes earn fewer Tips.',
-    skills: { knead: 3, proof: 3, oven: 3, decorate: 5, scale: 3, rush: 3 },
+    skills: { knead: 3, proof: 3, oven: 3, decorate: 5, scale: 3, rush: 3, juggle: 3, fold: 5, kitchen: 2 },
     coat: '#C2649A',
     light: '#F0A8CF',
     tint: '#452338',
@@ -147,7 +157,7 @@ export const BAKERS: BakerDef[] = [
     title: 'The Flour Smuggler',
     perk: 'Salt Shakers and Flour Clouds cost half.',
     weakness: 'Loses ★ if caught mid-sabotage by the Inspector.',
-    skills: { knead: 3, proof: 3, oven: 3, decorate: 3, scale: 2, rush: 3 },
+    skills: { knead: 3, proof: 3, oven: 3, decorate: 3, scale: 2, rush: 3, juggle: 4, fold: 3, kitchen: 3 },
     coat: '#7A5FB8',
     light: '#C3B0F0',
     tint: '#2F2648',
@@ -163,7 +173,7 @@ export const BAKERS: BakerDef[] = [
     title: 'The Recipe Keeper',
     perk: 'Rush Order recipes stay up 2 s longer.',
     weakness: 'Weaker at the Shared Oven.',
-    skills: { knead: 3, proof: 4, oven: 2, decorate: 3, scale: 3, rush: 5 },
+    skills: { knead: 3, proof: 4, oven: 2, decorate: 3, scale: 3, rush: 5, juggle: 2, fold: 4, kitchen: 4 },
     coat: '#3E8E8F',
     light: '#93D3D2',
     tint: '#1E3A3A',
@@ -199,9 +209,17 @@ export const GAMES: Record<GameId, GameDef> = {
   decorate: { id: 'decorate', name: 'Decorate', how: 'Drag from the green dot along the line', input: 'Drag', color: '#F0A8CF' },
   scale: { id: 'scale', name: 'Scale', how: 'Hold to pour · Weigh at the red mark', input: 'Hold / Space · Enter', color: '#93D3D2' },
   rush: { id: 'rush', name: 'Rush Order', how: 'Remember it · tap it back in order', input: 'Tap / 1-8', color: '#C3B0F0' },
+  juggle: { id: 'juggle', name: 'Egg Juggle', how: 'Tap a hand as an egg drops into it', input: 'Tap / F · J', color: '#FFE7A3' },
+  fold: { id: 'fold', name: 'Fold', how: 'Drag each end to its ring · let go on it', input: 'Drag', color: '#E9B868' },
+  kitchen: { id: 'kitchen', name: 'All Hands', how: 'Tap a station: flour, mix, knead, bake, serve', input: 'Tap', color: '#8FD18A' },
   dawn: { id: 'dawn', name: 'Dawn', how: 'Knead, load and pull, all at once', input: 'Tap', color: '#FFD27A' },
 };
-export const MINI_IDS: MiniId[] = ['knead', 'proof', 'oven', 'decorate', 'scale', 'rush'];
+export const MINI_IDS: MiniId[] = ['knead', 'proof', 'oven', 'decorate', 'scale', 'rush', 'juggle', 'fold', 'kitchen'];
+
+/** the host runs these for the whole table at once (one room, everyone in it): a player sends moves, not a result */
+export function isShared(g: GameId): g is SharedGame {
+  return g === 'oven' || g === 'dawn' || g === 'kitchen';
+}
 
 export type BuffKind = 'personal' | 'team' | 'rare' | 'staple';
 export interface BuffDef {
@@ -257,18 +275,18 @@ export const CUSTOMER: Record<string, Customer> = Object.fromEntries(CUSTOMERS.m
 
 /** item → icon shape and the games that suit it */
 export const ITEMS: Record<string, { icon: string; games: MiniId[] }> = {
-  Croissants: { icon: 'croissant', games: ['knead', 'proof', 'oven'] },
-  'Honey Buns': { icon: 'bun', games: ['proof', 'decorate', 'scale'] },
-  Pretzels: { icon: 'pretzel', games: ['knead', 'rush', 'oven'] },
-  'Rye Loaves': { icon: 'loaf', games: ['scale', 'knead', 'oven'] },
-  Sourdough: { icon: 'boule', games: ['proof', 'scale', 'knead'] },
-  Baguettes: { icon: 'baguette', games: ['knead', 'oven', 'rush'] },
-  'Plum Tarts': { icon: 'tart', games: ['decorate', 'rush', 'scale'] },
-  Shortbread: { icon: 'cookie', games: ['decorate', 'scale', 'rush'] },
-  'Cinnamon Rolls': { icon: 'roll', games: ['decorate', 'proof', 'oven'] },
-  'Meat Pies': { icon: 'pie', games: ['oven', 'rush', 'scale'] },
+  Croissants: { icon: 'croissant', games: ['fold', 'proof', 'oven'] },
+  'Honey Buns': { icon: 'bun', games: ['proof', 'decorate', 'juggle'] },
+  Pretzels: { icon: 'pretzel', games: ['fold', 'knead', 'oven'] },
+  'Rye Loaves': { icon: 'loaf', games: ['scale', 'knead', 'kitchen'] },
+  Sourdough: { icon: 'boule', games: ['proof', 'scale', 'kitchen'] },
+  Baguettes: { icon: 'baguette', games: ['knead', 'oven', 'kitchen'] },
+  'Plum Tarts': { icon: 'tart', games: ['decorate', 'rush', 'juggle'] },
+  Shortbread: { icon: 'cookie', games: ['decorate', 'scale', 'juggle'] },
+  'Cinnamon Rolls': { icon: 'roll', games: ['decorate', 'proof', 'fold'] },
+  'Meat Pies': { icon: 'pie', games: ['oven', 'rush', 'kitchen'] },
   Bagels: { icon: 'bagel', games: ['oven', 'knead', 'rush'] },
-  'Saffron Buns': { icon: 'bun', games: ['proof', 'decorate', 'rush'] },
+  'Saffron Buns': { icon: 'bun', games: ['proof', 'juggle', 'rush'] },
 };
 
 export interface TwistDef {

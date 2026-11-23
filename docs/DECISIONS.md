@@ -175,3 +175,37 @@ Now each tray holds its exact share, like every other game's loaves, and the tra
 less. The live counter in the oven adds the exact totals and rounds, so it never shows a fraction. At Normal AI every
 order type now ends 0–2 over at any table size. Solo and two-baker tables, whose trays rounded the other way
 (3.45 → 3), get their full share too. Survival and fines held within noise in the balance report.
+
+**D35 — Three more mini games (owner, 2026-11-22).** The owner asked for something like a busy shared kitchen with
+everyone in it, juggling eggs, and folding pretzels or croissants. **Egg Juggle**: a two-hand catch game (not a
+keep-it-up tapper, which mashing would win): each egg lands in a hand at a known moment, the ring closing onto the
+hand shows when, and a tap with nothing landing is a fumble that costs accuracy and blocks that hand for 0.28 s, so
+mashing scores under 0.25. Three catches put an egg in the bowl; the objective is eggs in the bowl. **Fold**: grab
+the end of the dough and let go on its ring. The end is on a spring, trailing your finger and swinging past where
+you stop, so it's timing as well as aim (letting go mid-swing misses), and a release far from the ring springs
+back and counts as a miss, so scribbling doesn't pay. A croissant's horns start wherever its roll was let go. Both
+are solo games: same scoring, AI and objectives as the other five.
+
+**D36 — All Hands: one kitchen for the whole table, tap a station to go there (owner, 2026-11-22).** Everyone's
+baker shares one top-down kitchen, which is the chaos the owner asked for. Movement is tap-to-go, not a joystick:
+it works on a phone, and a destination survives network delay (the host walks the cook; screens extrapolate along
+the path), where steering a cook over the relay would lag. The host runs it like the Shared Oven, with guests
+sending only the station they tapped. Each bakery has its own tickets and each loaf belongs to whoever took its
+flour, so in free-for-all and 2v2 nobody can serve a rival's loaf, but everyone fights for the same mixers, boards
+and ovens. Kneading is taps at the board, not walking up to it. It's never one of the four teaching orders. Swap
+Shop never swaps into or out of it.
+
+**D37 — All Hands balance (2026-11-22).** First AI runs deadlocked: four cooks took flour at once, both mixers
+filled, and nobody had free hands to take the dough out. AI cooks now take flour only when a mixer is free for it,
+and flour can go back in the bin. A cook that walked past a corner of the island in one step never crossed it off
+and paced back and forth; walking now drops every waypoint passed. Then the tickets: a whole number per baker made
+the results a cliff (12 tickets at 58 s was a 59% fine rate on kitchen orders), so the count now follows the clock
+after the first loaf's start-up, and the loaves follow the solo games' curve (share served ^ 0.5) instead of a
+fixed value per ticket. A shared kitchen's result also varies far less than four separate games, so at the oven's
+yield the 13th loaf covered every near miss and Normal nights stopped losing seals. Two changes: each AI cook gets a
+form for the game (`kitchenAiForm`; AI rivals' solo games already spread by `aiSpread`), and the yield is 0.84
+(`kitchenYield`), which leaves kitchen orders about half a loaf short on average. Easy AI cooks were slowed less than
+the others so an Easy table isn't sunk by one kitchen order. The balance report is back where it was (co-opetition
+Normal 97% / 0.86 fines, Easy 81%; the last commit had 97% / 0.81 and 77%). AI cooks score ~0.9
+here (they rarely fumble the steps), higher than their ~0.65 in solo games, but they still leave a person their
+share of the loaves.

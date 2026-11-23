@@ -89,7 +89,8 @@ export function newMatch(cfg: MatchCfg, seats: Seat[], now: number): MatchState 
 export function makeOrders(cfg: MatchCfg, rng: Rng): Order[] {
   const n = orderCount(cfg);
   const orders: Order[] = [];
-  const intro = rng.shuffle(['knead', 'proof', 'decorate', 'scale', 'rush', 'oven'] as MiniId[]).slice(0, 4);
+  // All Hands (the whole table in one kitchen) waits until the table has had a few orders together
+  const intro = rng.shuffle(['knead', 'proof', 'decorate', 'scale', 'rush', 'oven', 'juggle', 'fold'] as MiniId[]).slice(0, 4);
   // the oven is the loudest game: make sure it shows up in the teaching rounds
   if (!intro.includes('oven')) intro[rng.int(1, 3)] = 'oven';
   const used: Record<string, number> = {};
@@ -125,8 +126,9 @@ export function makeOrders(cfg: MatchCfg, rng: Rng): Order[] {
         if (twist === 'watch' && cfg.style === 'coop') twist = 'taster';
       }
       if (chainAll || twist === 'double' || (i >= 4 && !twist && rng.chance(0.22))) {
-        const second = pickGame([first, 'oven']);
-        games = first === 'oven' ? [second, first] : [first, second];
+        // a shared game (the oven, the kitchen) is a chain's second half: a fixed set of trays or tickets to finish
+        const second = pickGame([first, 'oven', 'kitchen']);
+        games = first === 'oven' || first === 'kitchen' ? [second, first] : [first, second];
       }
       for (const g of games) used[g] = (used[g] ?? 0) + 1;
       lastGame = games[games.length - 1]!;
@@ -263,6 +265,14 @@ export function scoreResult(st: MatchState, seat: number, res: GameResult): Roun
     p.stats.rescues += res.oven.rescues;
     p.stats.burnt += res.oven.burnt;
     p.stats.perfectPulls += res.oven.perfectPulls;
+  } else if (res.kitchen && g === 'kitchen') {
+    // All Hands: the bakery's served loaves, split by the work each baker put in (see kitchen.ts)
+    loaves = res.kitchen.loaves;
+    stars = q * BAL.starsPerGame * BAL.gameWeight[g] * starMult(st);
+    b.trayExact = Math.max(0, b.trayExact + loaves);
+    b.tray = Math.round(b.trayExact);
+    b.trayBy[seat] = Math.max(0, (b.trayBy[seat] ?? 0) + loaves);
+    p.stats.burnt += res.kitchen.burnt;
   } else {
     // a forgiving curve: a decent bake already puts most of a share on the tray, a perfect one a little more.
     // Shares add up exactly and the tray rounds the total, so the whole table's effort counts, not each rounding.

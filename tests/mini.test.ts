@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { audio } from '../src/audio/audio';
 import type { MiniEnv, MiniGame } from '../src/mini/common';
 import { DONE_AT, decorate } from '../src/mini/decorate';
+import { fold } from '../src/mini/fold';
+import { juggle } from '../src/mini/juggle';
 import { knead } from '../src/mini/knead';
 import { proof } from '../src/mini/proof';
 import { rush } from '../src/mini/rush';
@@ -285,7 +287,7 @@ describe('Objectives: a game ends once its goal is met', () => {
   });
 
   it('doing nothing never meets a goal', () => {
-    for (const make of [scale, proof, decorate, rush]) expect(finishedAt(make(env(make.name as GameId)), 50, () => {})).toBe(-1);
+    for (const make of [scale, proof, decorate, rush, juggle, fold]) expect(finishedAt(make(env(make.name as GameId)), 50, () => {})).toBe(-1);
   });
 
   it('the goal scales with the game length', () => {
@@ -312,5 +314,109 @@ describe('Objectives: a game ends once its goal is met', () => {
     const p = g.peek!() as DP;
     expect(p.done).toBe(false);
     expect(g.goal!()[0]).toBe(0);
+  });
+});
+
+describe('Egg Juggle', () => {
+  type E = { eggs: { to: string; t1: number; st: string }[]; now: number; good: number; perf: number };
+  /** taps each hand right as its egg lands */
+  const perfect = () => {
+    const seen = new Map<unknown, number>();
+    return (g: MiniGame): void => {
+      const p = g.peek!() as E;
+      for (const e of p.eggs) {
+        if (e.st !== 'fly' || e.to === 'bowl') continue;
+        if (seen.get(e) === e.t1) continue;
+        if (p.now >= e.t1) {
+          seen.set(e, e.t1);
+          g.key(e.to === 'L' ? 'KeyF' : 'KeyJ', true);
+        }
+      }
+    };
+  };
+  it('a perfect juggler scores near 1', () => expect(play(juggle(env('juggle')), 50, perfect())).toBeGreaterThan(0.9));
+  it('doing nothing scores 0', () => expect(play(juggle(env('juggle')), 50, () => {})).toBe(0));
+  it('mashing both hands every frame does not pay', () => expect(play(juggle(env('juggle')), 50, (g, _t, f) => g.key(f % 2 ? 'KeyF' : 'KeyJ', true))).toBeLessThan(0.25));
+  it('mashing a few times a second does not pay either', () => expect(play(juggle(env('juggle')), 50, (g, _t, f) => f % 9 === 0 && g.key(f % 18 ? 'KeyF' : 'KeyJ', true))).toBeLessThan(0.45));
+  it('a decent juggler lands mid-range', () => {
+    rnd = 5;
+    const seen = new Map<unknown, number>();
+    const plan = new Map<unknown, number>();
+    const q = play(juggle(env('juggle')), 50, (g) => {
+      const p = g.peek!() as E;
+      for (const e of p.eggs) {
+        if (e.st !== 'fly' || e.to === 'bowl' || seen.get(e) === e.t1) continue;
+        if (!plan.has(e) || plan.get(e) === -2) plan.set(e, rand() < 0.88 ? e.t1 + gauss() * 0.07 : -1);
+        const at = plan.get(e)!;
+        if (at < 0) {
+          seen.set(e, e.t1);
+          continue;
+        }
+        if (p.now >= at) {
+          seen.set(e, e.t1);
+          plan.set(e, -2);
+          g.key(e.to === 'L' ? 'KeyF' : 'KeyJ', true);
+        }
+      }
+    });
+    expect(q).toBeGreaterThan(0.4);
+    expect(q).toBeLessThan(0.85);
+  });
+});
+
+describe('Fold', () => {
+  type F = { p: [number, number]; v: [number, number]; grab: boolean; move?: { to: [number, number] }; home?: [number, number] };
+  /** grabs the end, drags it onto the ring, waits for it to settle, lets go */
+  const folder = (offset = 0) => (g: MiniGame) => {
+    const s = g.peek!() as F;
+    if (!s.move) return;
+    if (!s.grab) return g.down(s.p[0], s.p[1]);
+    g.move(s.move.to[0], s.move.to[1] + offset, true);
+    const d = Math.hypot(s.p[0] - s.move.to[0], s.p[1] - s.move.to[1] - offset);
+    if (d < 1.5 && Math.hypot(s.v[0], s.v[1]) < 8) g.up(0, 0);
+  };
+  it('folding onto every ring scores near 1', () => expect(play(fold(env('fold')), 50, folder())).toBeGreaterThan(0.9));
+  it('folding a little off the middle is good, not perfect', () => {
+    const q = play(fold(env('fold')), 50, folder(40));
+    expect(q).toBeGreaterThan(0.6);
+    expect(q).toBeLessThan(0.9);
+  });
+  it('letting go mid-swing (no waiting for it to settle) costs', () => {
+    const q = play(fold(env('fold')), 50, (g) => {
+      const s = g.peek!() as F;
+      if (!s.move) return;
+      if (!s.grab) return g.down(s.p[0], s.p[1]);
+      g.move(s.move.to[0], s.move.to[1], true);
+      // the finger is on the ring: let go at once, the dough still trailing behind
+      g.up(0, 0);
+    });
+    expect(q).toBeLessThan(0.3);
+  });
+  it('doing nothing scores 0', () => expect(play(fold(env('fold')), 50, () => {})).toBe(0));
+  it('scribbling all over the board does not pay', () => {
+    rnd = 9;
+    const q = play(fold(env('fold')), 50, (g, _t, f) => {
+      const x = 300 + rand() * 840;
+      const y = 140 + rand() * 600;
+      if (f % 20 === 0) g.down(x, y);
+      else if (f % 20 === 12) g.up(x, y);
+      else g.move(x, y, true);
+    });
+    expect(q).toBeLessThan(0.2);
+  });
+  it('a pastry is done once its last move is placed, and the goal ends the game', () => {
+    T = 0;
+    vi.spyOn(audio, 'time').mockImplementation(() => T);
+    const g = fold(env('fold'));
+    const bot = folder();
+    let t = 0;
+    for (; t < 50 && !g.finished!(); t += 1 / 60) {
+      T = t;
+      g.update(t, 1 / 60);
+      bot(g);
+    }
+    expect(g.finished!()).toBe(true);
+    expect(t).toBeLessThan(45);
+    expect(g.goal!()[0]).toBe(g.goal!()[1]);
   });
 });

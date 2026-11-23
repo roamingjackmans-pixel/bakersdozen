@@ -2,9 +2,11 @@
 // keeps a copy in sessionStorage to survive a refresh, and the rules functions copy it freely.
 
 export type BakerId = 'stephanie' | 'joe' | 'pip' | 'florentine' | 'wick' | 'bea';
-export type MiniId = 'knead' | 'proof' | 'oven' | 'decorate' | 'scale' | 'rush';
-/** a played game: one of the six, or the Dawn finale (every station at once in the Shared Oven) */
+export type MiniId = 'knead' | 'proof' | 'oven' | 'decorate' | 'scale' | 'rush' | 'juggle' | 'fold' | 'kitchen';
+/** a played game: one of the nine, or the Dawn finale (every station at once in the Shared Oven) */
 export type GameId = MiniId | 'dawn';
+/** the games the host runs for the whole table at once (everyone in one room); the rest each player runs alone */
+export type SharedGame = 'oven' | 'dawn' | 'kitchen';
 export type Style = 'coopetition' | 'coop' | 'ffa' | 'teams';
 export type Length = 'quick' | 'full' | 'long';
 /** how long each mini game runs (the host picks it in the lobby) */
@@ -246,6 +248,8 @@ export interface GameResult {
   natural20?: boolean;
   /** oven: loaves pulled for each seat's bakery, burnt trays, rescues, perfect pulls */
   oven?: { loaves: number; burnt: number; rescues: number; perfectPulls: number; stars: number };
+  /** All Hands (the shared kitchen): this seat's part of its bakery's served loaves, and what it did */
+  kitchen?: { loaves: number; served: number; burnt: number };
   geode?: boolean;
 }
 

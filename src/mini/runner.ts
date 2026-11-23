@@ -9,6 +9,9 @@ import { COUNTDOWN_S as COUNT_S } from '../game/flow';
 import { DISPLAY, H, INK, UI, W, cueGate, rr, fillInk, sparkle, text, type Live, type MiniEnv, type MiniGame } from './common';
 import { DEMOS } from './demos';
 import { decorate } from './decorate';
+import { fold } from './fold';
+import { juggle } from './juggle';
+import { kitchen, type KitchenLink } from './kitchen';
 import { knead } from './knead';
 import { oven, type OvenLink } from './oven';
 import { proof } from './proof';
@@ -31,6 +34,8 @@ export interface RunOpts {
   flourAt: number;
   sheriff: boolean;
   link?: OvenLink;
+  /** All Hands: the shared kitchen */
+  kitchen?: KitchenLink;
   /** Swap Shop: the game it turns into halfway */
   swapTo?: GameId;
   label: string;
@@ -70,6 +75,12 @@ function make(o: RunOpts, game: GameId, seed: number): MiniGame {
       return scale(env);
     case 'rush':
       return rush(env);
+    case 'juggle':
+      return juggle(env);
+    case 'fold':
+      return fold(env);
+    case 'kitchen':
+      return kitchen(env, o.kitchen!);
     default:
       return oven(env, o.link!);
   }
